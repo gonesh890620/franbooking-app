@@ -333,6 +333,35 @@ create table if not exists recruiter_payments (
   created_at timestamptz not null default now()
 );
 
+create table if not exists recruiter_target_areas (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid not null references app_users(id) on delete cascade,
+  assign_date date,
+  zip_code text,
+  city text,
+  state text,
+  sales_nav_id text,
+  profile_name text,
+  best_cst_time text,
+  legacy_row integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (recruiter_id, legacy_row)
+);
+
+create table if not exists recruiter_necessary_things (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid not null references app_users(id) on delete cascade,
+  item_date date,
+  description text,
+  payment_status text,
+  raw_data jsonb not null default '[]'::jsonb,
+  legacy_row integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (recruiter_id, legacy_row)
+);
+
 create table if not exists ai_cost_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references app_users(id),
@@ -366,4 +395,6 @@ alter table recurring_team_tasks enable row level security;
 alter table costs enable row level security;
 alter table client_payments enable row level security;
 alter table recruiter_payments enable row level security;
+alter table recruiter_target_areas enable row level security;
+alter table recruiter_necessary_things enable row level security;
 alter table ai_cost_logs enable row level security;

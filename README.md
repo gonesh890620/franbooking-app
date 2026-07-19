@@ -35,6 +35,15 @@ Required for Sheets-backed testing:
 - `APP_SECRET`
 - `ACCESS_SHEET_ID`
 - `MASTER_DB_ID`
+- `CAMPAIGN_SHEET_ID`
+- `TEMPLATE_SHEET_ID`
+- `TIME_LOG_ID`
+- `APPT_SHEET_ID`
+- `SALESNAV_INV_SHEET_ID`
+- `FEEDBACK_SHEET_ID`
+- `APPLICANT_SHEET_ID`
+- `DAILY_TASK_SHEET_ID`
+- `COST_SHEET_ID`
 
 Required later for Supabase hot-path migration:
 
@@ -75,3 +84,45 @@ Recruiter webapp / extension
 ```
 
 This keeps recruiter actions fast while preserving Sheets visibility.
+
+## Importing Existing Google Sheets Data
+
+1. Run `supabase/001_initial_schema.sql` in Supabase SQL Editor.
+2. Run `supabase/002_full_legacy_mapping.sql` in Supabase SQL Editor.
+3. Put all env vars from `.env.example` into `.env.local`.
+4. Install dependencies locally with `npm install`.
+5. Test read access without writing:
+
+```bash
+npm run migrate:sheets:dry
+```
+
+6. Import data:
+
+```bash
+npm run migrate:sheets
+```
+
+7. If you need to clear imported rows and re-import:
+
+```bash
+npm run migrate:sheets -- --reset
+```
+
+The importer reads:
+
+- Access Control / Recruiters
+- Campaign Tracker / Master Tracker
+- Client DTC URL
+- Leads Ledger
+- Template sheets
+- Master DB
+- All Appt
+- Time Log
+- Feedback / Leave
+- Sales Nav Inventory
+- Applicants / Agent Log
+- Daily Task
+- Cost / Client Payment
+- Each recruiter-owned `FU Tracker`, `Daily Assignment`, `Target Area`, and
+  `Necessary Things` tab from the Sheet ID in Access Control.

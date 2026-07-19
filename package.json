@@ -8,10 +8,12 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "migrate:sheets": "tsx scripts/migrate-sheets.ts"
+    "migrate:sheets": "tsx scripts/migrate-sheets.ts",
+    "migrate:sheets:dry": "tsx scripts/migrate-sheets.ts --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5",
     "googleapis": "^144.0.0",
     "next": "^14.2.11",
     "react": "^18.3.1",
