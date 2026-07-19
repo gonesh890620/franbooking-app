@@ -119,6 +119,13 @@ npm run migrate:sheets
 npm run migrate:sheets -- --reset
 ```
 
+To re-import only recruiter-owned tabs after fixing sheet access or duplicate
+contact rows:
+
+```bash
+npm run migrate:sheets:fu
+```
+
 The importer reads:
 
 - Access Control / Recruiters

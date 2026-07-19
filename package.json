@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "migrate:sheets": "tsx scripts/migrate-sheets.ts",
-    "migrate:sheets:dry": "tsx scripts/migrate-sheets.ts --dry-run"
+    "migrate:sheets:dry": "tsx scripts/migrate-sheets.ts --dry-run",
+    "migrate:sheets:fu": "tsx scripts/migrate-sheets.ts --only-fu"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

@@ -71,6 +71,16 @@ async function upsertMany(supabase: Supabase, table: string, records: Record<str
   return data || [];
 }
 
+function uniqueBy<T>(items: T[], keyFn: (item: T) => string) {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, item);
+  }
+  return Array.from(map.values());
+}
+
 async function insertMany(supabase: Supabase, table: string, records: Record<string, unknown>[]) {
   const filtered = records.filter(Boolean);
   if (!filtered.length) {
@@ -252,7 +262,7 @@ async function migrateRecruiterOwnedSheets(supabase: Supabase) {
     try {
       const fuRows = await rows(sheetId, "FU Tracker", "A:R");
       const clients = await clientMaps(supabase);
-      const contacts = fuRows
+      const contactsRaw = fuRows
         .filter((r) => text(r, 1) || text(r, 2))
         .map((r, idx) => {
           const clientName = cleanClientName(text(r, 3));
@@ -280,6 +290,12 @@ async function migrateRecruiterOwnedSheets(supabase: Supabase) {
             updated_at: new Date().toISOString()
           };
         });
+      const contacts = uniqueBy(
+        contactsRaw,
+        (contact) => `${contact.recruiter_id}:${contact.normalized_linkedin_url}`
+      );
+      const dropped = contactsRaw.length - contacts.length;
+      if (dropped > 0) console.log(`${email}: skipped ${dropped} duplicate contact rows by LinkedIn URL`);
       await upsertMany(supabase, "contacts", contacts, "recruiter_id,normalized_linkedin_url");
     } catch (e) {
       console.warn(`${email}: FU Tracker skipped: ${e instanceof Error ? e.message : e}`);
@@ -629,6 +645,11 @@ async function resetImportedTables(supabase: Supabase) {
 
 async function main() {
   const supabase = getSupabaseAdmin() as any;
+  if (arg("only-fu")) {
+    await migrateRecruiterOwnedSheets(supabase);
+    console.log("FU/Daily Assignment/Target Area/Necessary Things migration finished.");
+    return;
+  }
   await resetImportedTables(supabase);
   await migrateUsers(supabase);
   await migrateClientsAndCampaigns(supabase);
