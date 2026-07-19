@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate:sheets": "tsx scripts/migrate-sheets.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -22,6 +23,7 @@
     "@types/react-dom": "^18.3.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.11",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.2"
   }
 }
