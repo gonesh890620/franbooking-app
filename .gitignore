@@ -1,0 +1,14 @@
+.next/
+node_modules/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+vercel/
+dist/
+coverage/
+
+# Legacy source contains live API keys/admin credentials in the current local
+# copy. Keep it local until secrets are rotated or the files are sanitized.
+gas-webapp/
+combined-extension/
