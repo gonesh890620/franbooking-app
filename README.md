@@ -32,6 +32,8 @@ Copy `.env.example` to `.env.local` and fill in secrets. Never commit
 Required for Sheets-backed testing:
 
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_SERVICE_ACCOUNT_FILE` for local imports if you do not want to paste
+  the JSON into `.env.local`
 - `APP_SECRET`
 - `ACCESS_SHEET_ID`
 - `MASTER_DB_ID`
@@ -90,6 +92,14 @@ This keeps recruiter actions fast while preserving Sheets visibility.
 1. Run `supabase/001_initial_schema.sql` in Supabase SQL Editor.
 2. Run `supabase/002_full_legacy_mapping.sql` in Supabase SQL Editor.
 3. Put all env vars from `.env.example` into `.env.local`.
+   For local use, prefer:
+
+```env
+GOOGLE_SERVICE_ACCOUNT_FILE=C:\Users\gones\OneDrive\00 Franchise Booking\API\claude-automation-497715-6a3f3ee75144.json
+```
+
+   In Vercel, use `GOOGLE_SERVICE_ACCOUNT_JSON` instead because Vercel cannot
+   read your local Windows file.
 4. Install dependencies locally with `npm install`.
 5. Test read access without writing:
 

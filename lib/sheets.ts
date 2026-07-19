@@ -1,8 +1,17 @@
 import { google, sheets_v4 } from "googleapis";
+import fs from "fs";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
 function parseServiceAccount() {
+  const filePath = process.env.GOOGLE_SERVICE_ACCOUNT_FILE;
+  if (filePath) {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (parsed.private_key) {
+      parsed.private_key = String(parsed.private_key).replace(/\\n/g, "\n");
+    }
+    return parsed;
+  }
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not configured");
   const parsed = JSON.parse(raw);
