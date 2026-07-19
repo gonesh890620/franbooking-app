@@ -10,8 +10,8 @@ export default function HomePage() {
           This is the new Vercel/Supabase version running separately from the
           current Google Apps Script deployment.
         </p>
-        <Link className="primary-link" href="/recruiter">
-          Open Recruiter Dashboard
+        <Link className="primary-link" href="/login">
+          Open Login
         </Link>
       </section>
     </main>

@@ -71,7 +71,26 @@ export async function findRecruiter(email: string): Promise<RecruiterRecord | nu
   return null;
 }
 
-export async function loginRecruiter(email: string, password: string) {
+export function roleForLegacyType(type: string) {
+  const low = String(type || "").toLowerCase().trim();
+  if (low.startsWith("op")) return "operations";
+  if (low.startsWith("agent")) return "agent";
+  if (low === "growth") return "growth";
+  if (low === "client") return "client";
+  if (low === "admin") return "admin";
+  return "recruiter";
+}
+
+export function pageForRole(role: string) {
+  if (role === "operations") return "/operations";
+  if (role === "agent") return "/agent";
+  if (role === "growth") return "/growth";
+  if (role === "client") return "/client";
+  if (role === "admin") return "/admin";
+  return "/recruiter";
+}
+
+export async function loginAccessUser(email: string, password: string) {
   const rec = await findRecruiter(email);
   if (!rec) return { ok: false, status: "not_found" };
   const status = rec.status.toLowerCase();
@@ -79,15 +98,15 @@ export async function loginRecruiter(email: string, password: string) {
   if (rec.password && rec.password !== String(password || "").trim()) {
     return { ok: false, error: "Invalid password." };
   }
-  if (!rec.type.toLowerCase().startsWith("ph") && !rec.type.toLowerCase().includes("in") && !rec.type.toLowerCase().includes("bd")) {
-    return { ok: false, error: "This first migration build is recruiter-only." };
-  }
+  const role = roleForLegacyType(rec.type);
   setSession({ email: rec.email, name: rec.name, type: rec.type });
   return {
     ok: true,
     name: rec.name,
     email: rec.email,
     type: rec.type,
+    role,
+    page: pageForRole(role),
     nurtureBalance: rec.nBal,
     outreachBalance: rec.oBal,
     profileBalance: rec.pBal,
@@ -96,6 +115,8 @@ export async function loginRecruiter(email: string, password: string) {
     profileLimit: rec.pLimit
   };
 }
+
+export const loginRecruiter = loginAccessUser;
 
 export function logoutRecruiter() {
   clearSession();
