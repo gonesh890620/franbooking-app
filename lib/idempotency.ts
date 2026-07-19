@@ -7,7 +7,7 @@ export async function withIdempotency<T>(
   run: () => Promise<T>
 ): Promise<T> {
   if (!key) return run();
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseAdmin() as any;
   const existing = await supabase
     .from("idempotency_keys")
     .select("response")
@@ -27,7 +27,7 @@ export async function withIdempotency<T>(
 }
 
 export async function enqueueSheetSync(jobType: string, payload: Record<string, unknown>) {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseAdmin() as any;
   await supabase.from("sheet_sync_jobs").insert({
     job_type: jobType,
     payload
