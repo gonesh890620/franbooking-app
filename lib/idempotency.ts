@@ -13,7 +13,8 @@ export async function withIdempotency<T>(
     .select("response")
     .eq("key", key)
     .maybeSingle();
-  if (existing.data?.response) return existing.data.response as T;
+  const existingData = existing.data as { response?: T } | null;
+  if (existingData?.response) return existingData.response;
 
   const response = await run();
   await supabase.from("idempotency_keys").insert({
