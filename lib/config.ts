@@ -4,6 +4,8 @@ export const CONFIG = {
   templateSheetId: process.env.TEMPLATE_SHEET_ID || "1W8pG1SWl_dMIGziSSGRC2HUkqcsGZSl3mb8mymqJG_k",
   masterDbId: process.env.MASTER_DB_ID || "1Vf6UDslylUn8z0pcG7FQdIhc9sWckO7wRyrmyRx4idQ",
   timeLogId: process.env.TIME_LOG_ID || "11MLXf1-eieikzbnTMq8xZKtj4tBXd6DNkooZAVHDhG8",
+  costSheetId: process.env.COST_SHEET_ID || "1fSpaXJ5FjNaijDo-KoPsRVMiq9etuKYkyrjSuAn_jk8",
+  dailyTaskSheetId: process.env.DAILY_TASK_SHEET_ID || "1Xtv_gOjubw1cbcqYYvhcO2z3JoZkGcz78Xu-c4kSBP4",
   canyMax: Number(process.env.CANY_MAX || 6),
   appSecret: process.env.APP_SECRET || "dev-only-change-me",
   adminUsername: process.env.ADMIN_USERNAME || "admin",

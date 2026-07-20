@@ -6,7 +6,8 @@ import { setSession } from "@/lib/auth";
 import { updateMasterTrackerClientStatus } from "@/lib/masterTracker";
 import { brainstormWithCeo } from "@/lib/ai";
 import { roleForLegacyType } from "@/lib/legacyRecruiter";
-import { getNurtureFuStats, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange } from "@/lib/growthDashboard";
+import { getNurtureFuStats, getRecruiterDirectory, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange } from "@/lib/growthDashboard";
+import { appendClientPaymentToSheet, appendCostToSheet, appendTaskToSheet, reassignTaskInSheet, updateTaskStatusInSheet } from "@/lib/growthSheets";
 
 export async function GET() {
   try {
@@ -27,31 +28,83 @@ export async function POST(req: Request) {
     const action = String(body.action || "");
     const supabase = getSupabaseAdmin() as any;
 
+    // Dual-write: Supabase first (fast read path), then the matching Google
+    // Sheet tab (DAILY_TASK_SHEET_ID "Tasks"), per explicit direction that
+    // every Growth panel action should land in both places.
     if (action === "addTask") {
-      await supabase.from("team_tasks").insert({ title: body.title || "", description: body.description || "", topic: body.topic || "", priority: body.priority || "", status: "Open", assigned_email: body.assignedEmail || session.email, assigned_name: body.assignedName || session.name });
+      const legacyId = `wa-${Date.now()}`;
+      const title = body.title || "";
+      const description = body.description || "";
+      const topic = body.topic || "";
+      const priority = body.priority || "";
+      const assignedEmail = body.assignedEmail || session.email;
+      const assignedName = body.assignedName || session.name;
+      const createdDate = new Date().toISOString().slice(0, 10);
+      await supabase.from("team_tasks").insert({ legacy_id: legacyId, title, description, topic, priority, status: "Open", created_date: createdDate, assigned_email: assignedEmail, assigned_name: assignedName });
+      try {
+        await appendTaskToSheet(legacyId, title, description, topic, priority, body.eta || "", "Open", createdDate, assignedEmail, assignedName);
+      } catch (e) {
+        console.error("addTask sheet write failed:", e);
+      }
       return json({ ok: true });
     }
     if (action === "taskStatus") {
-      await supabase.from("team_tasks").update({ status: body.status || "Open", updated_at: new Date().toISOString() }).eq("id", String(body.id || ""));
+      const id = String(body.id || "");
+      const status = body.status || "Open";
+      const { data: taskRow } = await supabase.from("team_tasks").select("legacy_id").eq("id", id).maybeSingle();
+      await supabase.from("team_tasks").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+      if (taskRow?.legacy_id) {
+        try { await updateTaskStatusInSheet(taskRow.legacy_id, status); } catch (e) { console.error("taskStatus sheet write failed:", e); }
+      }
       return json({ ok: true });
     }
     // Matches GAS apiCeoReassignTask.
     if (action === "reassignTask") {
       const newAssignedEmail = String(body.assignedEmail || "").toLowerCase().trim();
       if (!newAssignedEmail) return json({ error: "Assignee is required" }, 400);
+      const id = String(body.id || "");
+      const assignedName = body.assignedName || "";
+      const { data: taskRow } = await supabase.from("team_tasks").select("legacy_id").eq("id", id).maybeSingle();
       await supabase.from("team_tasks").update({
         assigned_email: newAssignedEmail,
-        assigned_name: body.assignedName || "",
+        assigned_name: assignedName,
         updated_at: new Date().toISOString()
-      }).eq("id", String(body.id || ""));
+      }).eq("id", id);
+      if (taskRow?.legacy_id) {
+        try { await reassignTaskInSheet(taskRow.legacy_id, newAssignedEmail, assignedName); } catch (e) { console.error("reassignTask sheet write failed:", e); }
+      }
       return json({ ok: true });
     }
     if (action === "addCost") {
-      await supabase.from("costs").insert({ date: body.date || new Date().toISOString().slice(0, 10), amount: Number(body.amount || 0), description: body.description || "", notes: body.notes || "", use_method: body.useMethod || "", comments: body.comments || "" });
+      const date = body.date || new Date().toISOString().slice(0, 10);
+      const amount = Number(body.amount || 0);
+      const description = body.description || "";
+      const notes = body.notes || "";
+      const useMethod = body.useMethod || "";
+      const comments = body.comments || "";
+      await supabase.from("costs").insert({ date, amount, description, notes, use_method: useMethod, comments });
+      try {
+        await appendCostToSheet(date, amount, description, notes, useMethod, comments);
+      } catch (e) {
+        console.error("addCost sheet write failed:", e);
+      }
       return json({ ok: true });
     }
     if (action === "addPayment") {
-      await supabase.from("client_payments").insert({ date_issue: body.dateIssue || null, date_paid: body.datePaid || null, client_name: body.clientName || "", invoice_ref: body.invoiceRef || "", cycle: Number(body.cycle || 0), total_billed: Number(body.totalBilled || 0), status: body.status || "", charged_by: body.chargedBy || "" });
+      const dateIssue = body.dateIssue || "";
+      const datePaid = body.datePaid || "";
+      const clientName = body.clientName || "";
+      const invoiceRef = body.invoiceRef || "";
+      const cycle = Number(body.cycle || 0);
+      const totalBilled = Number(body.totalBilled || 0);
+      const status = body.status || "";
+      const chargedBy = body.chargedBy || "";
+      await supabase.from("client_payments").insert({ date_issue: dateIssue || null, date_paid: datePaid || null, client_name: clientName, invoice_ref: invoiceRef, cycle, total_billed: totalBilled, status, charged_by: chargedBy });
+      try {
+        await appendClientPaymentToSheet(dateIssue, datePaid, clientName, invoiceRef, cycle, totalBilled, status, chargedBy);
+      } catch (e) {
+        console.error("addPayment sheet write failed:", e);
+      }
       return json({ ok: true });
     }
 
@@ -94,6 +147,10 @@ export async function POST(req: Request) {
     // sheet live, so this is the slowest panel; lazy-loaded on first open.
     if (action === "nurtureFuStats") {
       return json(await getNurtureFuStats());
+    }
+    // Reports tab — Recruiter Directory (all Supabase-sourced).
+    if (action === "recruiterDirectory") {
+      return json(await getRecruiterDirectory());
     }
     // Daily Appointment by Recruiters — custom date-range table.
     if (action === "s2aRange") {

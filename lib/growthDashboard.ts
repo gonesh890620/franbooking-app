@@ -1,6 +1,5 @@
 import { getSupabaseAdmin } from "./supabaseAdmin";
-import { getValues, findSheetTitle, quoteSheetName } from "./sheets";
-import { cleanClientName, FU } from "./legacyMaps";
+import { cleanClientName } from "./legacyMaps";
 
 const DAY_MS = 86400000;
 const SALESNAV_EXPIRE_DAYS = 29;
@@ -293,15 +292,17 @@ export async function getRecruitersOnLeaveTomorrow() {
   return recruitersOnLeaveForDate(dayKey(new Date(Date.now() + DAY_MS)));
 }
 
-// New Nurture Sent / FU Sent — live-scanned from each recruiter's own FU
-// Tracker Google Sheet (Cols J/K/L/M), matching GAS's apiCeoGetNurtureFuStats.
-// Deliberately NOT read from Supabase `contacts`, which per this app's data
-// architecture is Sheets-only for FU Tracker and no longer kept live by
-// recruiter actions — this is the one Growth stat that must reach into the
-// Sheets directly to be trustworthy, same as GAS does (and why GAS keeps it
-// as a separate, slower, lazy-loaded endpoint instead of bundling it).
+// New Nurture Sent / FU Sent — read from the Supabase `contacts` mirror
+// (date_j/k/l/m columns), refreshed by scripts/migrate-sheets.ts. GAS itself
+// live-scans every recruiter's FU Tracker sheet for this, but that means ~50
+// Sheets-API round trips per load (slow, and hits Sheets' per-minute quota
+// with this many recruiters). Per explicit direction, Growth's reporting
+// reads only from Supabase — the recruiter action path (save/read in the
+// Recruiter panel) is still Sheets-only; this is a reporting-only read of a
+// periodically-refreshed mirror, not a live operational read/write.
 export async function getNurtureFuStats() {
-  const roster = await getRosterWithSheetId();
+  const roster = await getRoster();
+  const rosterById = new Map(roster.map((r) => [r.id, r]));
   const b = periodBoundaries();
   const newNurture = emptyPeriodCounts();
   const fuSent = emptyPeriodCounts();
@@ -309,54 +310,27 @@ export async function getNurtureFuStats() {
   const newNurtureByType = { "BD/Inhouse": emptyPeriodCounts(), PH: emptyPeriodCounts() };
   const fuByType = { "BD/Inhouse": emptyPeriodCounts(), PH: emptyPeriodCounts() };
 
-  for (const rec of roster) {
-    if (!rec.sheetId) continue;
-    try {
-      const title = await findSheetTitle(rec.sheetId, ["FU Tracker", "FU tracker", "Tracker", "Sheet1"]);
-      const rows = await getValues(rec.sheetId, `${quoteSheetName(title)}!A2:M`);
-      for (const row of rows) {
-        const name = String(row[FU.NAME] || "").trim();
-        const li = String(row[FU.LI] || "").trim();
-        if (!name && !li) continue;
-        const dJ = toDateKey(row[FU.DATE_J]);
-        const dK = toDateKey(row[FU.DATE_K]);
-        const dL = toDateKey(row[FU.DATE_L]);
-        const dM = toDateKey(row[FU.DATE_M]);
-        if (dJ) {
-          bumpPeriod(newNurture, dJ, b);
-          bumpPeriod(newNurtureByType[rec.type], dJ, b);
-        }
-        if (dK) { bumpPeriod(fuSent, dK, b); bumpPeriod(fuByType[rec.type], dK, b); if (dK >= b.today || true) fuByStage.fu1++; }
-        if (dL) { bumpPeriod(fuSent, dL, b); bumpPeriod(fuByType[rec.type], dL, b); fuByStage.fu2++; }
-        if (dM) { bumpPeriod(fuSent, dM, b); bumpPeriod(fuByType[rec.type], dM, b); fuByStage.fu3++; }
-      }
-    } catch {
-      // A single recruiter's sheet being unreachable shouldn't fail the whole aggregate.
-    }
-  }
-  return { newNurture: { ...newNurture, byType: newNurtureByType }, fuSent: { ...fuSent, byType: fuByType, byStage: fuByStage } };
-}
-
-type RosterWithSheet = RosterMember & { sheetId: string };
-
-async function getRosterWithSheetId(): Promise<RosterWithSheet[]> {
   const { data } = await (getSupabaseAdmin() as any)
-    .from("app_users")
-    .select("id,email,name,legacy_type,legacy_sheet_id,created_at")
-    .eq("role", "recruiter")
-    .eq("status", "approved")
-    .not("legacy_sheet_id", "is", null);
-  const now = Date.now();
-  return (data || [])
-    .map((u: any) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      type: normalizeRecruiterType(u.legacy_type),
-      workingAgeDays: u.created_at ? Math.max(0, Math.floor((now - Date.parse(u.created_at)) / DAY_MS)) : null,
-      sheetId: String(u.legacy_sheet_id || "").trim()
-    }))
-    .filter((r: RosterWithSheet) => r.sheetId);
+    .from("contacts")
+    .select("recruiter_id,date_j,date_k,date_l,date_m")
+    .limit(20000);
+
+  (data || []).forEach((row: any) => {
+    const recruiter = row.recruiter_id ? rosterById.get(row.recruiter_id) : null;
+    const dJ = toDateKey(row.date_j);
+    const dK = toDateKey(row.date_k);
+    const dL = toDateKey(row.date_l);
+    const dM = toDateKey(row.date_m);
+    if (dJ) {
+      bumpPeriod(newNurture, dJ, b);
+      if (recruiter) bumpPeriod(newNurtureByType[recruiter.type], dJ, b);
+    }
+    if (dK) { bumpPeriod(fuSent, dK, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dK, b); fuByStage.fu1++; }
+    if (dL) { bumpPeriod(fuSent, dL, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dL, b); fuByStage.fu2++; }
+    if (dM) { bumpPeriod(fuSent, dM, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dM, b); fuByStage.fu3++; }
+  });
+
+  return { newNurture: { ...newNurture, byType: newNurtureByType }, fuSent: { ...fuSent, byType: fuByType, byStage: fuByStage } };
 }
 
 export async function getS2AByRecruiterRange(startDate: string, endDate: string) {
@@ -395,4 +369,59 @@ export async function getS2AByRecruiterRange(startDate: string, endDate: string)
       PH: { ...byType.PH, s2a: s2aOf(byType.PH) }
     }
   };
+}
+
+// Reports tab — Recruiter Directory, matching GAS apiCeoGetRecruiterDirectory
+// but entirely Supabase-sourced (all-time appts/sends + Sales Nav seat
+// counts), no per-recruiter Sheets reach-in.
+export async function getRecruiterDirectory() {
+  const roster = await getRoster();
+  const rosterByEmail = new Map(roster.map((r) => [r.email.toLowerCase(), r]));
+  const supabase = getSupabaseAdmin() as any;
+  const b = periodBoundaries();
+
+  const [leadsRes, sendsRes, salesNavRes] = await Promise.all([
+    supabase.from("leads_ledger").select("campaign_name,recruiter_id"),
+    supabase.from("outreach_logs").select("recruiter_id,created_at"),
+    supabase.from("sales_nav_inventory").select("recruiter_email,date_added")
+  ]);
+
+  const apptsTotal = new Map<string, number>();
+  (leadsRes.data || []).forEach((row: any) => {
+    const campaignLower = String(row.campaign_name || "").toLowerCase();
+    if (!campaignLower || campaignLower.includes("canc") || !row.recruiter_id) return;
+    apptsTotal.set(row.recruiter_id, (apptsTotal.get(row.recruiter_id) || 0) + 1);
+  });
+
+  const sendsTotal = new Map<string, number>();
+  const sendsYesterday = new Map<string, number>();
+  (sendsRes.data || []).forEach((row: any) => {
+    if (!row.recruiter_id) return;
+    sendsTotal.set(row.recruiter_id, (sendsTotal.get(row.recruiter_id) || 0) + 1);
+    if (toDateKey(row.created_at) === b.yesterday) sendsYesterday.set(row.recruiter_id, (sendsYesterday.get(row.recruiter_id) || 0) + 1);
+  });
+
+  const salesNavTotal = new Map<string, number>();
+  const salesNavActive = new Map<string, number>();
+  (salesNavRes.data || []).forEach((row: any) => {
+    const recruiter = rosterByEmail.get(String(row.recruiter_email || "").toLowerCase());
+    if (!recruiter) return;
+    salesNavTotal.set(recruiter.id, (salesNavTotal.get(recruiter.id) || 0) + 1);
+    const daysLeft = computeSalesNavDaysLeft(row.date_added);
+    if (daysLeft !== null && daysLeft >= 0) salesNavActive.set(recruiter.id, (salesNavActive.get(recruiter.id) || 0) + 1);
+  });
+
+  const rows = roster.map((r) => ({
+    name: r.name,
+    email: r.email,
+    type: r.type,
+    workingAgeDays: r.workingAgeDays,
+    salesNavActive: salesNavActive.get(r.id) || 0,
+    salesNavTotal: salesNavTotal.get(r.id) || 0,
+    apptsTotal: apptsTotal.get(r.id) || 0,
+    sendsTotal: sendsTotal.get(r.id) || 0,
+    sendsYesterday: sendsYesterday.get(r.id) || 0
+  })).sort((a, c) => (c.apptsTotal - a.apptsTotal) || (c.sendsTotal - a.sendsTotal));
+
+  return { rows };
 }

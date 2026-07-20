@@ -685,11 +685,38 @@ async function resetImportedTables(supabase: Supabase) {
     recruiter_credits: "user_id",
     recruiter_client_assignments: "recruiter_id"
   };
+  // Deleting a large table in one statement can hit Supabase's statement
+  // timeout (this is what previously left `contacts` un-cleared, which then
+  // cascaded into a `clients` FK-violation and aborted the whole reset).
+  // Paginate in batches instead so no single DELETE is ever too large.
   for (const table of tables) {
     console.log(`clearing ${table}`);
     const key = keyByTable[table] || "id";
-    const { error } = await supabase.from(table).delete().neq(key, "00000000-0000-0000-0000-000000000000");
-    if (error) console.warn(`${table}: ${error.message}`);
+    let removedTotal = 0;
+    for (;;) {
+      const { data: batch, error: selectError } = await supabase.from(table).select(key).limit(500);
+      if (selectError) { console.warn(`${table}: ${selectError.message}`); break; }
+      if (!batch || !batch.length) break;
+      const ids = batch.map((row: any) => row[key]).filter((v: unknown) => v !== null && v !== undefined);
+      if (!ids.length) break;
+      const { error: deleteError } = await supabase.from(table).delete().in(key, ids);
+      if (deleteError) { console.warn(`${table}: ${deleteError.message}`); break; }
+      removedTotal += ids.length;
+    }
+    if (removedTotal) console.log(`  removed ${removedTotal} rows`);
+  }
+}
+
+// A failure in any one step must never silently skip every step after it —
+// that's exactly what happened when migrateDtcLinks threw uncaught and the
+// rest of the migration (leads ledger, appointments, time logs, sales nav,
+// applicants, tasks, costs, payments) never ran. Each step is isolated so
+// the migration always reaches the end and reports exactly what failed.
+async function runStep(name: string, fn: () => Promise<void>) {
+  try {
+    await fn();
+  } catch (error) {
+    console.error(`STEP FAILED: ${name}: ${error instanceof Error ? error.message : error}`);
   }
 }
 
@@ -700,18 +727,18 @@ async function main() {
     console.log("FU/Daily Assignment/Target Area/Necessary Things migration finished.");
     return;
   }
-  await resetImportedTables(supabase);
-  await migrateUsers(supabase);
-  await migrateClientsAndCampaigns(supabase);
-  await migrateDtcLinks(supabase);
-  await migrateRecruiterOwnedSheets(supabase);
-  await migrateTemplates(supabase);
-  await migrateWaitList(supabase);
-  await migrateLeadsLedger(supabase);
-  await migrateMasterDb(supabase);
-  await migrateAppointments(supabase);
-  await migrateTimeAndFeedback(supabase);
-  await migrateSalesNavApplicantsTasksFinance(supabase);
+  await runStep("resetImportedTables", () => resetImportedTables(supabase));
+  await runStep("migrateUsers", () => migrateUsers(supabase));
+  await runStep("migrateClientsAndCampaigns", () => migrateClientsAndCampaigns(supabase));
+  await runStep("migrateDtcLinks", () => migrateDtcLinks(supabase));
+  await runStep("migrateRecruiterOwnedSheets", () => migrateRecruiterOwnedSheets(supabase));
+  await runStep("migrateTemplates", () => migrateTemplates(supabase));
+  await runStep("migrateWaitList", () => migrateWaitList(supabase));
+  await runStep("migrateLeadsLedger", () => migrateLeadsLedger(supabase));
+  await runStep("migrateMasterDb", () => migrateMasterDb(supabase));
+  await runStep("migrateAppointments", () => migrateAppointments(supabase));
+  await runStep("migrateTimeAndFeedback", () => migrateTimeAndFeedback(supabase));
+  await runStep("migrateSalesNavApplicantsTasksFinance", () => migrateSalesNavApplicantsTasksFinance(supabase));
   console.log("Migration finished.");
 }
 

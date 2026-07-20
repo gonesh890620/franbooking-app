@@ -72,6 +72,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [s2aRangeData, setS2aRangeData] = useState<any>(null);
   const [s2aRangeVisible, setS2aRangeVisible] = useState(5);
 
+  const [reportsLoaded, setReportsLoaded] = useState(false);
+  const [directory, setDirectory] = useState<any>(null);
+  const [directorySort, setDirectorySort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "sendsYesterday", dir: "desc" });
+
   async function reload() {
     const res = await fetch("/api/growth");
     const payload = await res.json();
@@ -97,21 +101,34 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     setTab("recruiters");
     if (recruitersLoaded) return;
     setRecruitersLoaded(true);
-    try {
-      const [online, today, tomorrow, nurture] = await Promise.all([
-        action({ action: "onlineStatus" }),
-        action({ action: "leaveToday" }),
-        action({ action: "leaveTomorrow" }),
-        action({ action: "nurtureFuStats" })
-      ]);
-      setOnlineStatus(online);
-      setLeaveToday(today.rows || []);
-      setLeaveTomorrow(tomorrow.rows || []);
-      setNurtureFu(nurture);
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Could not load recruiter activity");
-    }
+    // Each panel loads and renders independently — previously these were
+    // bundled behind one Promise.all, so a single slow call (e.g. the old
+    // live-Sheet nurture/FU scan) left every panel stuck on "Loading..."
+    // even though its own data had already arrived.
+    action({ action: "onlineStatus" }).then(setOnlineStatus).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load recruiter status"));
+    action({ action: "leaveToday" }).then((r) => setLeaveToday(r.rows || [])).catch(() => {});
+    action({ action: "leaveTomorrow" }).then((r) => setLeaveTomorrow(r.rows || [])).catch(() => {});
+    action({ action: "nurtureFuStats" }).then(setNurtureFu).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load nurture/FU stats"));
   }
+
+  async function openReportsTab() {
+    setTab("reports");
+    if (reportsLoaded) return;
+    setReportsLoaded(true);
+    action({ action: "recruiterDirectory" }).then(setDirectory).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load recruiter directory"));
+  }
+
+  function toggleDirectorySort(key: string) {
+    setDirectorySort((prev) => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }));
+  }
+
+  const directoryRows = (directory?.rows || []).slice().sort((a: any, c: any) => {
+    const dir = directorySort.dir === "desc" ? -1 : 1;
+    const av = a[directorySort.key];
+    const cv = c[directorySort.key];
+    if (typeof av === "string") return av.localeCompare(cv) * dir;
+    return ((av ?? 0) - (cv ?? 0)) * dir;
+  });
 
   async function loadS2ARange(startDate: string, endDate: string) {
     setS2aRange({ startDate, endDate });
@@ -210,7 +227,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {/* Pinned block — always visible above the tabs, matching GAS */}
       <section className="panel" style={{ background: "#eef0ff", borderColor: "#dfe3ff" }}>
-        <div className="section-head"><h2>Client Status</h2><span className="muted">click a number for the list</span></div>
+        <div className="section-head"><h2>🏢 Client Status</h2><span className="muted">Click a number for the list</span></div>
         <section className="metric-grid">
           <StatTile label="On Fire" value={clients.onFire ?? 0} color="#dc2626" onClick={() => showClientBucket("onFire", "On Fire")} />
           <StatTile label="Smokin" value={clients.smokin ?? 0} color="#ea580c" onClick={() => showClientBucket("smokin", "Smokin")} />
@@ -221,7 +238,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={() => showClientBucket("waitlist", "Wait List (Master Tracker)")} />
         </section>
 
-        <div className="section-head" style={{ marginTop: 14 }}><h2>Appointments</h2></div>
+        <div className="section-head" style={{ marginTop: 14 }}><h2>📅 Appointments</h2></div>
         <section className="metric-grid">
           <StatTile label="Today" value={appts.today ?? 0} />
           <StatTile label="Yesterday" value={appts.yesterday ?? 0} />
@@ -231,7 +248,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Total Appt So Far" value={appts.total ?? 0} />
         </section>
 
-        <div className="section-head" style={{ marginTop: 14 }}><h2>All Appointments</h2><span className="muted">master sheet — every appt received</span></div>
+        <div className="section-head" style={{ marginTop: 14 }}><h2>📥 All Appointments</h2><span className="muted">Master sheet — every appointment received</span></div>
         <PeriodTable
           title=""
           rows={[
@@ -248,11 +265,12 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       </section>
 
       <div className="tabs" style={{ marginTop: 14 }}>
-        <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>dashboard</button>
-        <button className={`tab ${tab === "recruiters" ? "active" : ""}`} onClick={openRecruitersTab}>recruiters</button>
-        {["clients", "finance", "tasks", "reports"].map((name) => (
-          <button key={name} className={`tab ${tab === name ? "active" : ""}`} onClick={() => setTab(name as any)}>{name}</button>
-        ))}
+        <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>📊 Dashboard</button>
+        <button className={`tab ${tab === "recruiters" ? "active" : ""}`} onClick={openRecruitersTab}>👥 Recruiters</button>
+        <button className={`tab ${tab === "clients" ? "active" : ""}`} onClick={() => setTab("clients")}>🏢 Client Tracker</button>
+        <button className={`tab ${tab === "finance" ? "active" : ""}`} onClick={() => setTab("finance")}>💰 Finance</button>
+        <button className={`tab ${tab === "tasks" ? "active" : ""}`} onClick={() => setTab("tasks")}>📋 Daily Task</button>
+        <button className={`tab ${tab === "reports" ? "active" : ""}`} onClick={openReportsTab}>📈 Reports</button>
       </div>
 
       {tab === "dashboard" && (
@@ -281,7 +299,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             </div>
           </section>
           <section className="panel">
-            <h2>Impersonate</h2>
+            <h2>👁 Impersonate</h2>
             <div className="actions">
               <button className="btn btn-outline" onClick={() => openImpersonatePicker("operations")}>Operations Panel →</button>
               <button className="btn btn-outline" onClick={() => openImpersonatePicker("recruiter")}>Recruiter Panel →</button>
@@ -303,7 +321,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       {tab === "recruiters" && (
         <>
           <section className="panel">
-            <div className="section-head"><h2>Recruiter Activity</h2></div>
+            <div className="section-head"><h2>👥 Recruiter Activity</h2></div>
             <section className="metric-grid">
               <StatTile label="Active Recruiters" value={recruitersSummary.active ?? 0} sub={`${recruitersSummary.bdInhouseCount ?? 0} BD/Inhouse · ${recruitersSummary.phCount ?? 0} PH`} />
               <StatTile label="Active Sales Nav" value={recruitersSummary.activeSalesNav ?? 0} />
@@ -311,7 +329,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>Recruiter Status</h2><span className="muted">from Time Log — click a number for the list</span></div>
+            <div className="section-head"><h2>🟢 Recruiter Status</h2><span className="muted">From Time Log — click a number for the list</span></div>
             {!onlineStatus && <div className="muted">Loading...</div>}
             {onlineStatus && (
               <section className="metric-grid">
@@ -326,7 +344,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>S2A by Type</h2><span className="muted">sends per appointment</span></div>
+            <div className="section-head"><h2>📊 S2A by Type</h2><span className="muted">Sends per appointment</span></div>
             <PeriodTable
               title=""
               rows={(["BD/Inhouse", "PH"] as const).map((type) => ({
@@ -337,7 +355,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>Sends</h2><span className="muted">click a number to see who sent them</span></div>
+            <div className="section-head"><h2>📤 Sends</h2><span className="muted">Click a number to see who sent them</span></div>
             <section className="metric-grid">
               {PERIODS.map((p) => (
                 <StatTile key={p.key} label={p.label} value={sends[p.key] ?? 0} onClick={() => showSendsModal(p.key, p.label)} />
@@ -346,7 +364,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>New Nurture Sent</h2><span className="muted">first nurture message ever sent</span></div>
+            <div className="section-head"><h2>💬 New Nurture Sent</h2><span className="muted">First nurture message ever sent</span></div>
             {!nurtureFu && <div className="muted">Loading...</div>}
             {nurtureFu && (
               <section className="metric-grid">
@@ -356,7 +374,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>FU Sent</h2><span className="muted">FU1+FU2+FU3 combined</span></div>
+            <div className="section-head"><h2>🔁 FU Sent</h2><span className="muted">FU1 + FU2 + FU3 combined</span></div>
             {!nurtureFu && <div className="muted">Loading...</div>}
             {nurtureFu && (
               <>
@@ -394,7 +412,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <h2>Daily Appointment by Recruiters</h2>
+            <h2>📆 Daily Appointment by Recruiters</h2>
             <div className="form-grid admin-create-grid">
               <label>Start<input type="date" value={s2aRange.startDate} onChange={(e) => setS2aRange({ ...s2aRange, startDate: e.target.value })} /></label>
               <label>End<input type="date" value={s2aRange.endDate} onChange={(e) => setS2aRange({ ...s2aRange, endDate: e.target.value })} /></label>
@@ -429,7 +447,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           </section>
 
           <section className="panel">
-            <div className="section-head"><h2>Daily Feedback</h2></div>
+            <div className="section-head"><h2>📝 Daily Feedback</h2></div>
             <div className="compact-list">
               {unreviewedFeedback.map((f: any) => (
                 <div className="compact-row" key={f.id}>
@@ -446,7 +464,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "clients" && (
         <section className="panel table-wrap">
-          <h2>Client Tracker</h2>
+          <h2>🏢 Client Tracker</h2>
           <table>
             <thead><tr><th>Client</th><th>Status</th><th>Quota</th><th>Results</th><th>Payment</th><th>Action</th></tr></thead>
             <tbody>
@@ -473,7 +491,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       {tab === "finance" && (
         <section className="grid two">
           <div className="panel">
-            <h2>Add Cost</h2>
+            <h2>💵 Add Cost</h2>
             <div className="form-grid">
               <input placeholder="Amount" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
               <input placeholder="Description" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
@@ -482,7 +500,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             </div>
           </div>
           <div className="panel">
-            <h2>Add Client Payment</h2>
+            <h2>🧾 Add Client Payment</h2>
             <div className="form-grid">
               <input placeholder="Client" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
               <input placeholder="Total Billed" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
@@ -495,7 +513,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "tasks" && (
         <section className="panel">
-          <h2>Team Tasks</h2>
+          <h2>📋 Daily Task</h2>
           <div className="form-grid admin-create-grid">
             <input placeholder="Title" value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} />
             <input placeholder="Topic" value={task.topic} onChange={(e) => setTask({ ...task, topic: e.target.value })} />
@@ -506,9 +524,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             {(data.tasks || []).map((t: any) => (
               <div className="compact-row" key={t.id}>
                 <strong>{t.title}</strong>
-                <span>{t.status} | {t.assigned_name}</span>
+                <span className="badge">{t.status}</span>
+                <span>{t.assigned_name}</span>
                 <div className="actions">
-                  <button className="btn btn-outline" onClick={() => doAction({ action: "taskStatus", id: t.id, status: t.status === "Open" ? "Done" : "Open" })}>{t.status === "Open" ? "Mark Done" : "Reopen"}</button>
+                  <button className="btn btn-outline" onClick={() => doAction({ action: "taskStatus", id: t.id, status: t.status === "Completed" ? "Open" : "Completed" })}>{t.status === "Completed" ? "Reopen" : "Mark Complete"}</button>
                   <button className="btn btn-outline" onClick={() => {
                     const email = window.prompt("Reassign to (email):", t.assigned_email || "");
                     if (!email) return;
@@ -523,15 +542,58 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "reports" && (
-        <section className="panel">
-          <h2>Reports</h2>
-          <div className="count-grid">
-            <div className="count-item"><span>Total Appointments</span><strong>{data.appointments?.length || 0}</strong></div>
-            <div className="count-item"><span>Sends Last 7 Days</span><strong>{data.stats?.sendsLast7 || 0}</strong></div>
-            <div className="count-item"><span>Total Costs</span><strong>${Math.round(data.stats?.totalCost || 0)}</strong></div>
-            <div className="count-item"><span>Total Earnings</span><strong>${Math.round(data.stats?.totalEarning || 0)}</strong></div>
-          </div>
-        </section>
+        <>
+          <section className="panel">
+            <h2>📈 Reports</h2>
+            <div className="count-grid">
+              <div className="count-item"><span>Total Appointments</span><strong>{data.appointments?.length || 0}</strong></div>
+              <div className="count-item"><span>Sends Last 7 Days</span><strong>{data.stats?.sendsLast7 || 0}</strong></div>
+              <div className="count-item"><span>Total Costs</span><strong>${Math.round(data.stats?.totalCost || 0)}</strong></div>
+              <div className="count-item"><span>Total Earnings</span><strong>${Math.round(data.stats?.totalEarning || 0)}</strong></div>
+            </div>
+          </section>
+
+          <section className="panel table-wrap">
+            <div className="section-head"><h2>🗂 Recruiter Directory</h2><span className="muted">Click a column header to sort</span></div>
+            {!directory && <div className="muted">Loading...</div>}
+            {directory && (
+              <table>
+                <thead>
+                  <tr>
+                    {[
+                      { key: "name", label: "Recruiter" },
+                      { key: "type", label: "Type" },
+                      { key: "workingAgeDays", label: "Age" },
+                      { key: "salesNavActive", label: "Sales Nav Active" },
+                      { key: "salesNavTotal", label: "Sales Nav Used (Total)" },
+                      { key: "apptsTotal", label: "Appts (Total)" },
+                      { key: "sendsTotal", label: "Sends (Total)" },
+                      { key: "sendsYesterday", label: "Sends (Yesterday)" }
+                    ].map((col) => (
+                      <th key={col.key} style={{ cursor: "pointer" }} onClick={() => toggleDirectorySort(col.key)}>
+                        {col.label}{directorySort.key === col.key ? (directorySort.dir === "desc" ? " ▼" : " ▲") : ""}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {directoryRows.map((r: any) => (
+                    <tr key={r.email}>
+                      <td>{r.name}</td>
+                      <td>{r.type}</td>
+                      <td>{r.workingAgeDays ?? "-"}</td>
+                      <td>{r.salesNavActive}</td>
+                      <td>{r.salesNavTotal}</td>
+                      <td>{r.apptsTotal}</td>
+                      <td>{r.sendsTotal}</td>
+                      <td>{r.sendsYesterday}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        </>
       )}
 
       {listModal && (
