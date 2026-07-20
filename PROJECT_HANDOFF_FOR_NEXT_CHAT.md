@@ -183,3 +183,30 @@ Still needs exact GAS parity for:
 - Admin console has logout.
 - Recruiter Get More Credit restored.
 - Recruiter stats now includes appointments, FU contacts, and outreach saves.
+
+## Data Architecture Cutover — Phase 1 (this session)
+
+Full plan at `C:\Users\gones\.claude\plans\cosmic-tumbling-sprout.md`. Target architecture, confirmed with the user:
+
+| Domain | Source of truth |
+|---|---|
+| Recruiter FU Tracker, Target Area, Daily Assignment | **Google Sheets only** |
+| Master Tracker (client roster/status) | **Dual write**: Supabase `campaigns` + Master Tracker sheet |
+| Leads Ledger, everything else (agent/recruiter logs, feedback, leave, templates, credits, applicants, Sales Nav inventory) | **Supabase only** |
+
+Phase 1 (data-architecture correctness) is done:
+- `lib/legacyRecruiter.ts`: `getDailyTasks`, `getContacts`, `checkLiDuplicate`, `getClients`, `getTargetArea`, `getClientRatio` are now Sheets-only (previously several of these read/wrote a Supabase `contacts`/`recruiter_target_areas`/`recruiter_client_assignments` mirror instead of, or ahead of, the recruiter's actual Google Sheet). `saveNurture`, `markStatus`, `saveOutreach`, `bulkSetCany` no longer dual-write into Supabase `contacts` — Sheets is the only write target for FU Tracker data now. Deleted the now-dead `upsertSupabaseContact`/`findOrCreateSupabaseClient`/`getSupabaseDailyTasks`/`deriveTaskFromContact` helpers.
+- Added `setFuStatusOnly` (single-cell FU Tracker status write) and `bootstrapRecruiter` now also returns `clientRatio`.
+- New `lib/masterTracker.ts`: `updateMasterTrackerClientStatus(clientName, currentStatus, pausedReason)` writes the Master Tracker Google Sheet's Current Status / Paused Reason columns.
+- `app/api/operations/route.ts`: `updateClientStatus` now dual-writes Supabase `campaigns` + the Master Tracker sheet. `recallAppointment` no longer touches the now-Sheets-only `contacts` table — it writes the recruiter's FU Tracker sheet status cell instead (via `setFuStatusOnly`) and now sets the full GAS-equivalent field set on the Supabase `appointments` row (`identity_check`, `canceled`, `cancellation_reason`, `canceled_by`, `on_leads_ledger`, `sent_to_client`) — also now requires a reason, matching GAS.
+- `lib/sheets.ts`: added `listSheetTitles`/`findSheetTitleExact` helpers.
+- `npm run build` passes. **Not yet manually verified against live Sheets/Supabase** — no automated test suite exists for these paths; next session (or the user) should smoke-test: Outreach/Nurture save writing to the real FU Tracker sheet with no `contacts` row created, Target Area / Daily Assignment reading real sheet data, and an Operations client-status change/appointment-recall updating both Sheet and Supabase.
+- **Known follow-up, not fixed yet:** `lib/growthData.ts`'s Growth dashboard still reads the Supabase `contacts` table for a "sends last 7 days" stat. Since `contacts` no longer gets new rows, this stat will go stale going forward — repointing it belongs to Phase 5 (Growth parity) below, not this data-architecture pass.
+- **Scope note vs. the original plan:** GAS's `apiCeoAddClient`/`apiCeoUpdateClient`/`apiCeoArchiveClient`/`apiCeoMarkLedgerSent` (adding/archiving a client, marking a ledger cycle sent — 4-sheet writes across Accounts/Master Tracker/Customer_Roles/Client DTC URL, with auto-numbered Account/Campaign IDs) were **not** built in this pass. They're net-new Growth features with no existing Next.js UI or route today, not fixes to an existing wrong-data-source bug, so they've been moved to Phase 5 (Growth parity) where they belong thematically.
+
+### Roadmap (not started yet — check in before each)
+- **Phase 2 — Admin + Login parity:** GAS-style shared admin login (single env-var username/password, separate from recruiter accounts), expiry/access-window check + pending/expired/removed UI states, Admin's Approve-pending-signup flow, auto-generated password + credential display/copy, required reason on Remove Access, referral assignment, Staff Report tab, Activity Log tab, tabbed layout with modals. Needs new Supabase columns (`referred_by`, `remove_reason`, `remove_date`, `expires`/`approved_at`).
+- **Phase 3 — Recruiter parity:** Rotation button + CA/NY-aware filtering, AI Generate/Custom+Rewrite, LI Screening reference card, dynamic Unsure-criteria panel, Time Log heartbeat, paused-client guard banner.
+- **Phase 4 — Operations parity:** vendor-grouped Sales Nav inventory, onboarding checklist/status pipeline, merged contact search, full applicant edit.
+- **Phase 5 — Growth parity:** the add/update/archive-client + mark-ledger-sent actions noted above, recruiter oversight breakdowns, reports, feedback "mark reviewed" + appointment review/recall in Growth, CEO Brainstorm AI, impersonation, drilldown popups, team task reassignment/recurring tasks, Vendor Management.
+- **Phase 6 — Agent/Client polish:** Agent's full 6-step bilingual onboarding with gated Call Outcome select; Client's cycle/date-range filters, feedback/recall tags, charts.

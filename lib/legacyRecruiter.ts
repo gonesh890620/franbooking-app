@@ -1,6 +1,6 @@
 import { CONFIG } from "./config";
 import { clearSession, setSession } from "./auth";
-import { appendValues, colName, findSheetTitle, getValues, quoteSheetName, updateValues } from "./sheets";
+import { appendValues, colName, findSheetTitle, findSheetTitleExact, getValues, listSheetTitles, quoteSheetName, updateValues } from "./sheets";
 import { cleanClientName, FU, normalizeDateCell, normalizeLi, RC, SheetRow, todayIso } from "./legacyMaps";
 import { getSupabaseAdmin } from "./supabaseAdmin";
 
@@ -56,92 +56,6 @@ async function findSupabaseUser(email: string): Promise<{ id: string; email: str
     return data || null;
   } catch {
     return null;
-  }
-}
-
-async function findOrCreateSupabaseClient(name: string): Promise<string | null> {
-  const cleaned = cleanClientName(name);
-  if (!cleaned) return null;
-  try {
-    const supabase = getSupabaseAdmin() as any;
-    const { data: existing } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("name", cleaned)
-      .maybeSingle();
-    const existingClient = existing as { id?: string } | null;
-    if (existingClient?.id) return existingClient.id;
-
-    const { data: inserted } = await supabase
-      .from("clients")
-      .insert({ name: cleaned })
-      .select("id")
-      .single();
-    const insertedClient = inserted as { id?: string } | null;
-    return insertedClient?.id || null;
-  } catch {
-    return null;
-  }
-}
-
-async function upsertSupabaseContact(email: string, data: {
-  name?: string;
-  li: string;
-  clientName?: string;
-  status?: string;
-  nextAction?: string;
-  conversation?: string;
-  reply?: string;
-  source?: string;
-  salesNavId?: string;
-  code?: string;
-  tag?: string;
-  cany?: boolean;
-  outreachType?: string;
-  legacyRow?: number;
-  lastNurtureType?: string;
-  dateJ?: string;
-  dateK?: string;
-  dateL?: string;
-  dateM?: string;
-}) {
-  const user = await findSupabaseUser(email);
-  const normalized = normalizeLi(data.li);
-  if (!user || !normalized) return;
-
-  const clientId = await findOrCreateSupabaseClient(data.clientName || "");
-  try {
-    await (getSupabaseAdmin() as any)
-      .from("contacts")
-      .upsert({
-        recruiter_id: user.id,
-        recruiter_name: user.name,
-        recruiter_email: user.email,
-        name: data.name || "",
-        linkedin_url: data.li,
-        normalized_linkedin_url: normalized,
-        client_id: clientId,
-        status: data.status || "",
-        next_action: data.nextAction || "",
-        conversation: data.conversation || "",
-        reply: data.reply || "",
-        date_j: data.dateJ || null,
-        date_k: data.dateK || null,
-        date_l: data.dateL || null,
-        date_m: data.dateM || null,
-        source: data.source || "",
-        sales_nav_id: data.salesNavId || "",
-        code: data.code || "",
-        tag: data.tag || "",
-        cany: Boolean(data.cany),
-        outreach_type: data.outreachType || "",
-        legacy_row: data.legacyRow || null,
-        last_nurture_type: data.lastNurtureType || "",
-        last_synced_to_sheet_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }, { onConflict: "recruiter_id,normalized_linkedin_url" });
-  } catch {
-    // Sheet save remains the fallback until the Supabase cutover SQL is applied.
   }
 }
 
@@ -301,6 +215,13 @@ async function getDailyAssignmentSheet(email: string) {
   return { spreadsheetId: rec.sheetId, title, rec };
 }
 
+async function getTargetAreaSheet(email: string) {
+  const rec = await findRecruiter(email);
+  if (!rec || !rec.sheetId) return null;
+  const title = await findSheetTitle(rec.sheetId, ["Target Area", "target area", "Target area"]);
+  return { spreadsheetId: rec.sheetId, title, rec };
+}
+
 export async function getUsage(email: string) {
   const rec = await findRecruiter(email);
   if (!rec) return { error: "Unauthorized" };
@@ -333,25 +254,6 @@ export async function getUsage(email: string) {
 }
 
 export async function getClients(email: string) {
-  const supabaseUser = await findSupabaseUser(email);
-  if (supabaseUser) {
-    const { data } = await (getSupabaseAdmin() as any)
-      .from("recruiter_client_assignments")
-      .select("status,event_url,nurture_pct,cany_appts,flag_notes,clients(name)")
-      .eq("recruiter_id", supabaseUser.id);
-    const clients = (data || [])
-      .map((row: any) => ({
-        name: cleanClientName(row.clients?.name || ""),
-        status: String(row.status || "").trim(),
-        eventUrl: String(row.event_url || "").trim(),
-        nurturePct: String(row.nurture_pct || "").trim(),
-        canyAppts: String(row.cany_appts || "").trim(),
-        flagNotes: String(row.flag_notes || "").trim()
-      }))
-      .filter((client: ClientAssignment) => client.name);
-    if (clients.length) return { clients };
-  }
-
   const sheet = await getDailyAssignmentSheet(email);
   if (!sheet) return { clients: [], error: "Daily Assignment tab not found" };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:F`);
@@ -456,101 +358,7 @@ function deriveTaskFromRow(row: SheetRow, rowNumber: number, today: string): { t
   return result;
 }
 
-function deriveTaskFromContact(row: any, today: string): { todayTask?: DailyTask; reviewTask?: DailyTask } {
-  const name = String(row.name || "").trim();
-  const li = String(row.linkedin_url || "").trim();
-  if (!name && !li) return {};
-  const status = String(row.reply || row.status || "").trim();
-  const sl = status.toLowerCase();
-  if (["booked", "closed", "not interested", "recalled", "done", "profile restricted"].includes(sl)) return {};
-
-  const addDays = (date: string, days: number) => {
-    if (!date) return "";
-    const d = new Date(`${date}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  const due = (date: string) => Boolean(date && date <= today);
-  const dJ = normalizeDateCell(row.date_j);
-  const dK = normalizeDateCell(row.date_k);
-  const dL = normalizeDateCell(row.date_l);
-  const dM = normalizeDateCell(row.date_m);
-
-  let isDue = false;
-  let stage = "";
-  let nurtureType = "";
-  if (sl === "interested") {
-    isDue = due(dJ);
-    stage = "SDFU Due";
-    nurtureType = "SDFU";
-  } else if (sl === "sdfu sent" || sl === "unsure" || sl === "unsure srfu") {
-    isDue = due(addDays(dJ, 1));
-    stage = "FU1 Due";
-    nurtureType = "FU1";
-  } else if (sl.includes("fu1") || sl === "int fu1 sent") {
-    isDue = due(addDays(dK || dJ, 1));
-    stage = "FU2 Due";
-    nurtureType = "FU2";
-  } else if (sl.includes("fu2") || sl === "int fu2 sent") {
-    isDue = due(addDays(dL || dK, 1));
-    stage = "FU3 Due";
-    nurtureType = "FU3";
-  } else if (sl === "dm-sn expire") {
-    isDue = due(addDays(dL, 1));
-    stage = "FU3 Due";
-    nurtureType = "FU3";
-  }
-
-  const base = {
-    name,
-    li,
-    client: cleanClientName(row.clients?.name || ""),
-    row: Number(row.legacy_row || 0),
-    status,
-    notes: String(row.sales_nav_id || row.code || "").trim(),
-    canyFlag: row.cany ? "Yes" : ""
-  };
-
-  const result: { todayTask?: DailyTask; reviewTask?: DailyTask } = {};
-  if (isDue && stage !== "Review Due") result.todayTask = { ...base, stage, nurtureType };
-  if (sl.includes("fu3")) {
-    const anchor = dM || dL;
-    const daysWaiting = anchor ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`)) / 86400000) : null;
-    result.reviewTask = { ...base, stage: "Review Due", nurtureType: "", daysWaiting };
-  }
-  return result;
-}
-
-async function getSupabaseDailyTasks(email: string) {
-  const user = await findSupabaseUser(email);
-  if (!user) return null;
-  try {
-    const { data, error } = await (getSupabaseAdmin() as any)
-      .from("contacts")
-      .select("name,linkedin_url,status,reply,date_j,date_k,date_l,date_m,sales_nav_id,code,cany,legacy_row,clients(name)")
-      .eq("recruiter_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(5000);
-    if (error || !data) return null;
-    const today = todayIso();
-    const tasks: DailyTask[] = [];
-    const reviewTasks: DailyTask[] = [];
-    data.forEach((row: any) => {
-      const parsed = deriveTaskFromContact(row, today);
-      if (parsed.todayTask) tasks.push(parsed.todayTask);
-      if (parsed.reviewTask) reviewTasks.push(parsed.reviewTask);
-    });
-    reviewTasks.sort((a, b) => (b.daysWaiting ?? -1) - (a.daysWaiting ?? -1));
-    return { tasks, reviewTasks, canyMax: CONFIG.canyMax };
-  } catch {
-    return null;
-  }
-}
-
 export async function getDailyTasks(email: string) {
-  const supabaseTasks = await getSupabaseDailyTasks(email);
-  if (supabaseTasks) return supabaseTasks;
-
   const sheet = await getFuSheet(email);
   if (!sheet) return { tasks: [], reviewTasks: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -571,29 +379,6 @@ export async function getDailyTasks(email: string) {
 }
 
 export async function getContacts(email: string, q: string) {
-  const supabaseUser = await findSupabaseUser(email);
-  if (supabaseUser) {
-    let query = (getSupabaseAdmin() as any)
-      .from("contacts")
-      .select("name,linkedin_url,status,legacy_row,cany,clients(name)")
-      .eq("recruiter_id", supabaseUser.id)
-      .order("updated_at", { ascending: false })
-      .limit(80);
-    const search = String(q || "").toLowerCase().trim();
-    if (search) query = query.or(`name.ilike.%${search}%,linkedin_url.ilike.%${search}%`);
-    const { data } = await query;
-    return {
-      contacts: (data || []).map((row: any) => ({
-        name: String(row.name || "").trim(),
-        li: String(row.linkedin_url || "").trim(),
-        status: String(row.status || "").trim(),
-        client: cleanClientName(row.clients?.name || ""),
-        canyFlag: row.cany ? "Yes" : "",
-        row: Number(row.legacy_row || 0)
-      }))
-    };
-  }
-
   const sheet = await getFuSheet(email);
   if (!sheet) return { contacts: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -618,40 +403,66 @@ export async function getContacts(email: string, q: string) {
 }
 
 export async function checkLiDuplicate(email: string, li: string) {
-  const user = await findSupabaseUser(email);
   const normalized = normalizeLi(li);
-  if (!normalized) return { duplicate: false };
-  if (user) {
-    const { data } = await (getSupabaseAdmin() as any)
-      .from("contacts")
-      .select("name,status,linkedin_url,clients(name)")
-      .eq("normalized_linkedin_url", normalized)
-      .limit(5);
-    const matches = (data || []).map((row: any) => ({
-      name: row.name || "",
-      status: row.status || "",
-      li: row.linkedin_url || "",
-      client: cleanClientName(row.clients?.name || "")
-    }));
-    return { duplicate: matches.length > 0, matches };
+  if (!normalized) return { duplicate: false, matches: [] };
+
+  const matches: Array<{ name: string; status: string; li: string; recruiter?: string }> = [];
+  const outreachTitle = await findSheetTitleExact(CONFIG.masterDbId, ["LI Outreach", "Outreach"]);
+  if (outreachTitle) {
+    const rows = await getValues(CONFIG.masterDbId, `${quoteSheetName(outreachTitle)}!A2:H`);
+    for (const row of rows) {
+      if (normalizeLi(String(row[4] || "")) === normalized) {
+        matches.push({ name: String(row[1] || "").trim(), status: "", li, recruiter: String(row[1] || "").trim() });
+        break;
+      }
+    }
   }
-  const found = await findFuRowByLi(email, li);
-  return { duplicate: Boolean(found), matches: found ? [{ name: found.row[FU.NAME], status: found.row[FU.STATUS] || found.row[FU.REPLY], li }] : [] };
+  if (!matches.length) {
+    const titles = await listSheetTitles(CONFIG.masterDbId);
+    const firstTitle = titles[0];
+    if (firstTitle) {
+      const rows = await getValues(CONFIG.masterDbId, `${quoteSheetName(firstTitle)}!A2:G`);
+      for (const row of rows) {
+        if (normalizeLi(String(row[2] || "")) === normalized) {
+          matches.push({ name: "", status: "", li, recruiter: String(row[6] || "").trim() });
+          break;
+        }
+      }
+    }
+  }
+  return { duplicate: matches.length > 0, matches };
 }
 
 export async function getTargetArea(email: string, q: string) {
-  const user = await findSupabaseUser(email);
-  if (!user) return { rows: [] };
-  let query = (getSupabaseAdmin() as any)
-    .from("recruiter_target_areas")
-    .select("assign_date,zip_code,city,state,sales_nav_id,profile_name,best_cst_time")
-    .eq("recruiter_id", user.id)
-    .order("assign_date", { ascending: false, nullsFirst: false })
-    .limit(80);
-  const search = String(q || "").trim();
-  if (search) query = query.or(`zip_code.ilike.%${search}%,city.ilike.%${search}%,state.ilike.%${search}%,profile_name.ilike.%${search}%`);
-  const { data } = await query;
-  return { rows: data || [] };
+  const sheet = await getTargetAreaSheet(email);
+  if (!sheet) return { rows: [] };
+  const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:G`);
+  const search = String(q || "").trim().toLowerCase();
+  const results: Array<Record<string, string>> = [];
+  for (const row of rows) {
+    const zip = String(row[1] || "").trim();
+    const city = String(row[2] || "").trim();
+    const state = String(row[3] || "").trim();
+    const salesNavId = String(row[4] || "").trim();
+    const profileName = String(row[5] || "").trim();
+    const bestTime = String(row[6] || "").trim();
+    if (!zip && !city && !salesNavId && !profileName) continue;
+    if (search) {
+      const hay = `${salesNavId} ${profileName} ${zip} ${city} ${state}`.toLowerCase();
+      if (!hay.includes(search)) continue;
+    }
+    results.push({
+      assign_date: normalizeDateCell(row[0]) || String(row[0] || "").trim(),
+      zip_code: zip,
+      city,
+      state,
+      sales_nav_id: salesNavId,
+      profile_name: profileName,
+      best_cst_time: bestTime
+    });
+    if (results.length >= 150) break;
+  }
+  return { rows: results };
 }
 
 export async function getUnsureCriteria() {
@@ -712,42 +523,27 @@ export async function getNurtureTemplate(email: string, nurtureType: string, cli
   return { ...tpl, body, text: body };
 }
 
+// All-time per-client contact counts from the recruiter's own FU Tracker,
+// excluding dead leads (Not Interested / Profile Restricted) — mirrors GAS
+// apiGetClientRatio's "allCounts" pass.
 export async function getClientRatio(email: string) {
-  const user = await findSupabaseUser(email);
-  if (!user) return { rows: [] };
-  const [{ data: assignments }, { data: contacts }] = await Promise.all([
-    (getSupabaseAdmin() as any)
-      .from("recruiter_client_assignments")
-      .select("client_id,clients(name)")
-      .eq("recruiter_id", user.id),
-    (getSupabaseAdmin() as any)
-      .from("contacts")
-      .select("client_id,status")
-      .eq("recruiter_id", user.id)
-  ]);
+  const sheet = await getFuSheet(email);
+  if (!sheet) return { rows: [] };
+  const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
   const totals = new Map<string, number>();
-  (contacts || []).forEach((row: any) => {
-    if (!row.client_id) return;
-    totals.set(row.client_id, (totals.get(row.client_id) || 0) + 1);
-  });
-  const rows = (assignments || []).map((row: any) => ({
-    client: cleanClientName(row.clients?.name || ""),
-    count: totals.get(row.client_id) || 0
-  }));
-  const max = Math.max(1, ...rows.map((row: any) => row.count));
-  return { rows: rows.map((row: any) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
+  for (const row of rows) {
+    const status = String(row[FU.STATUS] || "").trim().toLowerCase();
+    if (status === "not interested" || status === "profile restricted") continue;
+    const client = cleanClientName(String(row[FU.CLIENT] || ""));
+    if (!client) continue;
+    totals.set(client, (totals.get(client) || 0) + 1);
+  }
+  const entries = Array.from(totals.entries()).map(([client, count]) => ({ client, count }));
+  const max = Math.max(1, ...entries.map((row) => row.count));
+  return { rows: entries.map((row) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
 }
 
 export async function bulkSetCany(email: string, lis: string[]) {
-  const user = await findSupabaseUser(email);
-  const normalized = lis.map(normalizeLi).filter(Boolean);
-  if (user && normalized.length) {
-    await (getSupabaseAdmin() as any)
-      .from("contacts")
-      .update({ cany: true, updated_at: new Date().toISOString() })
-      .eq("recruiter_id", user.id)
-      .in("normalized_linkedin_url", normalized);
-  }
   let updated = 0;
   for (const li of lis) {
     const found = await findFuRowByLi(email, li);
@@ -898,26 +694,6 @@ export async function saveNurture(email: string, li: string, reply: string, nurt
   if (!row[FU.DATE_L] && nurtureType === "SalesNavRemove") row[FU.DATE_L] = today;
   const range = `${quoteSheetName(found.title)}!A${found.rowNumber}:Q${found.rowNumber}`;
   await updateValues(found.spreadsheetId, range, [row.slice(0, 17)]);
-  await upsertSupabaseContact(email, {
-    name: String(row[FU.NAME] || ""),
-    li,
-    clientName: cleanClientName(clientName || String(row[FU.CLIENT] || "")),
-    status: newStatus,
-    nextAction: String(row[FU.NEXT_ACTION] || ""),
-    conversation,
-    reply,
-    source: String(row[FU.SOURCE] || source || ""),
-    salesNavId: String(row[FU.SALES_NAV] || ""),
-    code: String(row[FU.CODE] || ""),
-    tag: String(row[FU.TAG] || ""),
-    cany: String(row[FU.CANY] || "").toLowerCase() === "yes",
-    legacyRow: found.rowNumber,
-    lastNurtureType: nurtureType,
-    dateJ: normalizeDateCell(row[FU.DATE_J]),
-    dateK: normalizeDateCell(row[FU.DATE_K]),
-    dateL: normalizeDateCell(row[FU.DATE_L]),
-    dateM: normalizeDateCell(row[FU.DATE_M])
-  });
   return { ok: true, newStatus };
 }
 
@@ -925,14 +701,16 @@ export async function markStatus(email: string, li: string, status: string, next
   const found = await findFuRowByLi(email, li);
   if (!found) return { error: "Contact not found." };
   await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!F${found.rowNumber}:G${found.rowNumber}`, [[status, nextAction]]);
-  await upsertSupabaseContact(email, {
-    name: String(found.row[FU.NAME] || ""),
-    li,
-    clientName: cleanClientName(String(found.row[FU.CLIENT] || "")),
-    status,
-    nextAction,
-    legacyRow: found.rowNumber
-  });
+  return { ok: true };
+}
+
+// Single-cell FU Tracker Status write (Col F only), used by Operations
+// recall so it never clobbers an unrelated Next Action note — mirrors GAS
+// apiOpsRecallAppt's single setValue on FU.STATUS.
+export async function setFuStatusOnly(email: string, li: string, status: string) {
+  const found = await findFuRowByLi(email, li);
+  if (!found) return { ok: false, reason: "Contact not found in FU Tracker." };
+  await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!${colName(FU.STATUS)}${found.rowNumber}`, [[status]]);
   return { ok: true };
 }
 
@@ -974,17 +752,6 @@ export async function saveOutreach(email: string, data: {
   }
   const rec = await findRecruiter(email);
   await appendValues(CONFIG.masterDbId, "'Sheet1'!A:G", [[today, data.name, data.li, "", "", "", rec?.name || email]]);
-  await upsertSupabaseContact(email, {
-    name: data.name,
-    li: data.li,
-    status: "Awaiting Response",
-    source: sourceLabel,
-    salesNavId: data.salesNavId || "",
-    code: data.subject || data.code || "",
-    cany: Boolean(data.isCany),
-    outreachType: data.outType,
-    legacyRow: found?.rowNumber
-  });
   await insertSupabaseOutreach(email, {
     name: data.name,
     li: data.li,
@@ -996,10 +763,11 @@ export async function saveOutreach(email: string, data: {
 }
 
 export async function bootstrapRecruiter(email: string) {
-  const [usage, clients, tasks] = await Promise.all([
+  const [usage, clients, tasks, clientRatio] = await Promise.all([
     getUsage(email),
     getClients(email),
-    getDailyTasks(email)
+    getDailyTasks(email),
+    getClientRatio(email)
   ]);
-  return { usage, clients, tasks };
+  return { usage, clients, tasks, clientRatio };
 }

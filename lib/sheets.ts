@@ -79,15 +79,28 @@ export async function appendValues(spreadsheetId: string, range: string, values:
   });
 }
 
-export async function findSheetTitle(spreadsheetId: string, candidates: string[]) {
+export async function listSheetTitles(spreadsheetId: string) {
   const sheets = await getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
-  const titles = (meta.data.sheets || [])
+  return (meta.data.sheets || [])
     .map((s) => s.properties?.title || "")
     .filter(Boolean);
+}
+
+export async function findSheetTitle(spreadsheetId: string, candidates: string[]) {
+  const titles = await listSheetTitles(spreadsheetId);
   for (const candidate of candidates) {
     const found = titles.find((title) => title.toLowerCase() === candidate.toLowerCase());
     if (found) return found;
   }
   return titles[0] || candidates[0];
+}
+
+export async function findSheetTitleExact(spreadsheetId: string, candidates: string[]): Promise<string | null> {
+  const titles = await listSheetTitles(spreadsheetId);
+  for (const candidate of candidates) {
+    const found = titles.find((title) => title.toLowerCase() === candidate.toLowerCase());
+    if (found) return found;
+  }
+  return null;
 }

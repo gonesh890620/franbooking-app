@@ -2,6 +2,8 @@ import { error, json, requireSession } from "@/lib/http";
 import { getOperationsPayload } from "@/lib/operationsData";
 import { canOpenRole } from "@/lib/roles";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { setFuStatusOnly } from "@/lib/legacyRecruiter";
+import { updateMasterTrackerClientStatus } from "@/lib/masterTracker";
 
 export async function GET() {
   try {
@@ -23,23 +25,34 @@ export async function POST(req: Request) {
     const supabase = getSupabaseAdmin() as any;
 
     if (action === "processAppointment" || action === "recallAppointment") {
+      if (action === "recallAppointment" && !String(body.reason || "").trim()) {
+        return error("A recall reason is required.", 400);
+      }
       const status = action === "recallAppointment" ? "recalled" : "processed";
       const recruiterEmail = String(body.recruiterEmail || "").toLowerCase().trim();
       const { data: recruiter } = recruiterEmail
         ? await supabase.from("app_users").select("id,name,email").eq("email", recruiterEmail).maybeSingle()
         : { data: null };
-      await supabase.from("appointments").update({
+      const updates: Record<string, unknown> = {
         status,
         recruiter_id: recruiter?.id || null,
         recruiter_name: recruiter?.name || String(body.recruiterName || ""),
-        cancellation_reason: action === "recallAppointment" ? String(body.reason || "") : undefined,
         updated_at: new Date().toISOString()
-      }).eq("id", String(body.id || ""));
-      if (recruiter?.id && body.linkedinUrl) {
-        await supabase.from("contacts").update({
-          status: action === "recallAppointment" ? "Recalled" : "Booked",
-          updated_at: new Date().toISOString()
-        }).eq("recruiter_id", recruiter.id).eq("normalized_linkedin_url", String(body.linkedinUrl || "").toLowerCase().replace(/\/+$/g, ""));
+      };
+      if (action === "recallAppointment") {
+        updates.identity_check = session.name || session.email;
+        updates.canceled = "Yes";
+        updates.cancellation_reason = String(body.reason || "");
+        updates.canceled_by = "FranBooking";
+        updates.on_leads_ledger = "No";
+        updates.sent_to_client = "N/a";
+      }
+      await supabase.from("appointments").update(updates).eq("id", String(body.id || ""));
+
+      // FU Tracker is Google-Sheets-only — the recruiter's pipeline status
+      // lives there, not in Supabase, so recall must write the Sheet directly.
+      if (action === "recallAppointment" && recruiterEmail && body.linkedinUrl) {
+        await setFuStatusOnly(recruiterEmail, String(body.linkedinUrl), "Recalled");
       }
       return json({ ok: true });
     }
@@ -91,11 +104,17 @@ export async function POST(req: Request) {
     }
 
     if (action === "updateClientStatus") {
+      const campaignId = String(body.campaignId || "");
+      const { data: campaign } = await supabase.from("campaigns").select("campaign_name").eq("id", campaignId).maybeSingle();
       await supabase.from("campaigns").update({
         campaign_status: body.status || "",
         paused_reason: body.pausedReason || "",
         updated_at: new Date().toISOString()
-      }).eq("id", String(body.campaignId || ""));
+      }).eq("id", campaignId);
+      // Master Tracker dual-writes to its Google Sheet alongside Supabase.
+      if (campaign?.campaign_name) {
+        await updateMasterTrackerClientStatus(campaign.campaign_name, body.status || "", body.pausedReason || "");
+      }
       return json({ ok: true });
     }
 
