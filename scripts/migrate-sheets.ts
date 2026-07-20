@@ -131,6 +131,7 @@ async function migrateUsers(supabase: Supabase) {
         legacy_type: type,
         legacy_sheet_id: text(r, RC.SHEET_ID),
         status: text(r, RC.STATUS) || "approved",
+        password_hash: text(r, RC.PASSWORD),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

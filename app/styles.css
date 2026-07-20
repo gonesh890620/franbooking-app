@@ -341,9 +341,24 @@ th {
   font-size: 12px;
 }
 
+.compact-button {
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.compact-button:hover {
+  background: #fafafa;
+}
+
 .form-grid {
   display: grid;
   gap: 10px;
+}
+
+.admin-create-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 label {

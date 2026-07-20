@@ -221,6 +221,9 @@ export function pageForRole(role: string) {
 }
 
 export async function loginAccessUser(email: string, password: string) {
+  const supabaseLogin = await loginSupabaseUser(email, password);
+  if (supabaseLogin) return supabaseLogin;
+
   const rec = await findRecruiter(email);
   if (!rec) return { ok: false, status: "not_found" };
   const status = rec.status.toLowerCase();
@@ -247,6 +250,38 @@ export async function loginAccessUser(email: string, password: string) {
 }
 
 export const loginRecruiter = loginAccessUser;
+
+async function loginSupabaseUser(email: string, password: string) {
+  try {
+    const { data: rec } = await (getSupabaseAdmin() as any)
+      .from("app_users")
+      .select("email,name,status,role,legacy_type,password_hash,legacy_sheet_id")
+      .eq("email", String(email || "").toLowerCase().trim())
+      .maybeSingle();
+    if (!rec) return null;
+    const status = String(rec.status || "").toLowerCase();
+    if (status !== "approved") return { ok: false, status };
+    const storedPassword = String(rec.password_hash || "").trim();
+    if (storedPassword && storedPassword !== String(password || "").trim()) {
+      return { ok: false, error: "Invalid password." };
+    }
+    const type = String(rec.legacy_type || rec.role || "PH");
+    const role = roleForLegacyType(type);
+    setSession({ email: rec.email, name: rec.name, type });
+    const usage = await getUsage(rec.email);
+    return {
+      ok: true,
+      name: rec.name,
+      email: rec.email,
+      type,
+      role,
+      page: pageForRole(role),
+      ...(usage || {})
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function logoutRecruiter() {
   clearSession();
@@ -580,6 +615,219 @@ export async function getContacts(email: string, q: string) {
     .filter((c) => !query || c.name.toLowerCase().includes(query) || c.li.toLowerCase().includes(query))
     .slice(0, 80);
   return { contacts };
+}
+
+export async function checkLiDuplicate(email: string, li: string) {
+  const user = await findSupabaseUser(email);
+  const normalized = normalizeLi(li);
+  if (!normalized) return { duplicate: false };
+  if (user) {
+    const { data } = await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("name,status,linkedin_url,clients(name)")
+      .eq("normalized_linkedin_url", normalized)
+      .limit(5);
+    const matches = (data || []).map((row: any) => ({
+      name: row.name || "",
+      status: row.status || "",
+      li: row.linkedin_url || "",
+      client: cleanClientName(row.clients?.name || "")
+    }));
+    return { duplicate: matches.length > 0, matches };
+  }
+  const found = await findFuRowByLi(email, li);
+  return { duplicate: Boolean(found), matches: found ? [{ name: found.row[FU.NAME], status: found.row[FU.STATUS] || found.row[FU.REPLY], li }] : [] };
+}
+
+export async function getTargetArea(email: string, q: string) {
+  const user = await findSupabaseUser(email);
+  if (!user) return { rows: [] };
+  let query = (getSupabaseAdmin() as any)
+    .from("recruiter_target_areas")
+    .select("assign_date,zip_code,city,state,sales_nav_id,profile_name,best_cst_time")
+    .eq("recruiter_id", user.id)
+    .order("assign_date", { ascending: false, nullsFirst: false })
+    .limit(80);
+  const search = String(q || "").trim();
+  if (search) query = query.or(`zip_code.ilike.%${search}%,city.ilike.%${search}%,state.ilike.%${search}%,profile_name.ilike.%${search}%`);
+  const { data } = await query;
+  return { rows: data || [] };
+}
+
+export async function getUnsureCriteria() {
+  const { data } = await (getSupabaseAdmin() as any)
+    .from("unsure_criteria")
+    .select("code,criteria,response")
+    .eq("active", true)
+    .order("legacy_row", { ascending: true });
+  return { rows: data || [] };
+}
+
+async function getNextTemplate(email: string, area: string, type: string) {
+  const user = await findSupabaseUser(email);
+  const key = `${area}:${type}`;
+  const supabase = getSupabaseAdmin() as any;
+  const { data: templates } = await supabase
+    .from("templates")
+    .select("subject,body,code")
+    .eq("template_area", area)
+    .eq("template_type", type)
+    .eq("active", true)
+    .order("legacy_row", { ascending: true });
+  const list = templates || [];
+  if (!list.length) return { subject: "", body: "", code: "", text: "" };
+  let nextIndex = 0;
+  if (user) {
+    const { data: state } = await supabase
+      .from("template_rotation_state")
+      .select("next_index")
+      .eq("user_id", user.id)
+      .eq("template_key", key)
+      .maybeSingle();
+    nextIndex = Number(state?.next_index || 0);
+  }
+  const selected = list[nextIndex % list.length];
+  if (user) {
+    await supabase.from("template_rotation_state").upsert({
+      user_id: user.id,
+      template_key: key,
+      next_index: (nextIndex + 1) % list.length,
+      last_used_date: todayIso()
+    }, { onConflict: "user_id,template_key" });
+  }
+  return { ...selected, text: selected.body || "" };
+}
+
+export async function getOutreachTemplate(email: string, outType: string) {
+  return getNextTemplate(email, "outreach", outType || "InMail");
+}
+
+export async function getNurtureTemplate(email: string, nurtureType: string, clientName = "") {
+  const tpl = await getNextTemplate(email, "nurture", nurtureType || "Interested");
+  const clients = (await getClients(email)).clients || [];
+  const client = clients.find((c: ClientAssignment) => c.name === cleanClientName(clientName));
+  const body = String(tpl.body || tpl.text || "")
+    .replace(/\{\{Calendar Link\}\}/gi, client?.eventUrl || "")
+    .replace(/\{Calendar Link\}/gi, client?.eventUrl || "");
+  return { ...tpl, body, text: body };
+}
+
+export async function getClientRatio(email: string) {
+  const user = await findSupabaseUser(email);
+  if (!user) return { rows: [] };
+  const [{ data: assignments }, { data: contacts }] = await Promise.all([
+    (getSupabaseAdmin() as any)
+      .from("recruiter_client_assignments")
+      .select("client_id,clients(name)")
+      .eq("recruiter_id", user.id),
+    (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("client_id,status")
+      .eq("recruiter_id", user.id)
+  ]);
+  const totals = new Map<string, number>();
+  (contacts || []).forEach((row: any) => {
+    if (!row.client_id) return;
+    totals.set(row.client_id, (totals.get(row.client_id) || 0) + 1);
+  });
+  const rows = (assignments || []).map((row: any) => ({
+    client: cleanClientName(row.clients?.name || ""),
+    count: totals.get(row.client_id) || 0
+  }));
+  const max = Math.max(1, ...rows.map((row: any) => row.count));
+  return { rows: rows.map((row: any) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
+}
+
+export async function bulkSetCany(email: string, lis: string[]) {
+  const user = await findSupabaseUser(email);
+  const normalized = lis.map(normalizeLi).filter(Boolean);
+  if (user && normalized.length) {
+    await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .update({ cany: true, updated_at: new Date().toISOString() })
+      .eq("recruiter_id", user.id)
+      .in("normalized_linkedin_url", normalized);
+  }
+  let updated = 0;
+  for (const li of lis) {
+    const found = await findFuRowByLi(email, li);
+    if (!found) continue;
+    await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!R${found.rowNumber}:R${found.rowNumber}`, [["Yes"]]);
+    updated++;
+  }
+  return { ok: true, updated };
+}
+
+export async function getBillingStats(email: string, startDate = "", endDate = "") {
+  const user = await findSupabaseUser(email);
+  if (!user) return { period: "", total: 0, byDate: [] };
+  let query = (getSupabaseAdmin() as any)
+    .from("leads_ledger")
+    .select("date_created")
+    .or(`recruiter_id.eq.${user.id},recruiter_name.eq.${user.name}`);
+  if (startDate) query = query.gte("date_created", `${startDate}T00:00:00Z`);
+  if (endDate) query = query.lte("date_created", `${endDate}T23:59:59Z`);
+  const { data } = await query;
+  const byDate = new Map<string, number>();
+  (data || []).forEach((row: any) => {
+    const date = String(row.date_created || "").slice(0, 10);
+    if (date) byDate.set(date, (byDate.get(date) || 0) + 1);
+  });
+  return {
+    period: startDate && endDate ? `${startDate} to ${endDate}` : "All imported data",
+    total: data?.length || 0,
+    byDate: Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }))
+  };
+}
+
+export async function getReferralStats(email: string, startDate = "", endDate = "") {
+  const user = await findSupabaseUser(email);
+  if (!user) return { total: 0, referredRecruiters: [] };
+  const { data: referred } = await (getSupabaseAdmin() as any)
+    .from("app_users")
+    .select("email,name")
+    .ilike("legacy_type", "%PH%");
+  return { total: 0, period: startDate && endDate ? `${startDate} to ${endDate}` : "All imported data", referredRecruiters: referred || [] };
+}
+
+export async function submitLeave(email: string, data: { leaveDate: string; duration: string; reason: string }) {
+  const user = await findSupabaseUser(email);
+  if (!user) return { error: "Unauthorized" };
+  await (getSupabaseAdmin() as any).from("leave_requests").insert({
+    user_id: user.id,
+    email: user.email,
+    name: user.name,
+    leave_date: data.leaveDate,
+    duration_days: Number(data.duration || 1),
+    reason: data.reason || "",
+    submitted_date: todayIso()
+  });
+  return { ok: true };
+}
+
+export async function submitFeedback(email: string, data: {
+  salesNavAll?: boolean;
+  salesNavNoCount?: string;
+  salesNavNoReason?: string;
+  unusual?: string;
+  responsesToday?: string;
+  comments?: string;
+}) {
+  const user = await findSupabaseUser(email);
+  if (!user) return { error: "Unauthorized" };
+  await (getSupabaseAdmin() as any).from("daily_feedback").insert({
+    user_id: user.id,
+    email: user.email,
+    name: user.name,
+    submitted_date: todayIso(),
+    salesnav_all: Boolean(data.salesNavAll),
+    salesnav_no_count: Number(data.salesNavNoCount || 0),
+    salesnav_no_reason: data.salesNavNoReason || "",
+    unusual: data.unusual || "",
+    responses_today: Number(data.responsesToday || 0),
+    comments: data.comments || ""
+  });
+  return { ok: true };
 }
 
 function nextStatusForNurture(nurtureType: string) {

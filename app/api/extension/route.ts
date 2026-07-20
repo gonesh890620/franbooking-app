@@ -4,6 +4,17 @@ import {
   getClients,
   getContacts,
   getDailyTasks,
+  getClientRatio,
+  getTargetArea,
+  getUnsureCriteria,
+  getOutreachTemplate,
+  getNurtureTemplate,
+  checkLiDuplicate,
+  getBillingStats,
+  getReferralStats,
+  bulkSetCany,
+  submitFeedback,
+  submitLeave,
   getUsage,
   loginRecruiter,
   markStatus,
@@ -25,7 +36,15 @@ export async function GET(req: Request) {
     if (api === "usage") return json(await getUsage(email));
     if (api === "tasks") return json(await getDailyTasks(email));
     if (api === "clients") return json(await getClients(email));
+    if (api === "clientRatio") return json(await getClientRatio(email));
     if (api === "contacts") return json(await getContacts(email, param(url, "q")));
+    if (api === "outreachTpl") return json(await getOutreachTemplate(email, param(url, "outType") || "InMail"));
+    if (api === "nurtureTpl") return json(await getNurtureTemplate(email, param(url, "nType") || "Interested", param(url, "client")));
+    if (api === "checkLiDup") return json(await checkLiDuplicate(email, param(url, "li")));
+    if (api === "targetArea") return json(await getTargetArea(email, param(url, "q")));
+    if (api === "unsureCriteria") return json(await getUnsureCriteria());
+    if (api === "billingStats") return json(await getBillingStats(email, param(url, "startDate"), param(url, "endDate")));
+    if (api === "referralStats") return json(await getReferralStats(email, param(url, "startDate"), param(url, "endDate")));
     if (api === "saveNurture") {
       return json(await saveNurture(
         email,
@@ -55,6 +74,20 @@ export async function GET(req: Request) {
     if (api === "markProfileRestricted") {
       return json(await markStatus(email, param(url, "li"), "Profile Restricted", "No Action-Closed"));
     }
+    if (api === "bulkSetCany") return json(await bulkSetCany(email, (param(url, "lis") || "").split("|").filter(Boolean)));
+    if (api === "submitLeave") return json(await submitLeave(email, {
+      leaveDate: param(url, "leaveDate"),
+      duration: param(url, "duration"),
+      reason: param(url, "reason")
+    }));
+    if (api === "submitFeedback") return json(await submitFeedback(email, {
+      salesNavAll: param(url, "salesNavAll") === "1" || param(url, "salesNavAll") === "true",
+      salesNavNoCount: param(url, "salesNavNoCount"),
+      salesNavNoReason: param(url, "salesNavNoReason"),
+      unusual: param(url, "unusual"),
+      responsesToday: param(url, "responsesToday"),
+      comments: param(url, "comments")
+    }));
     return json({ error: `Unknown or not-yet-migrated extension API: ${api}` }, 404);
   } catch (e) {
     return error(e instanceof Error ? e.message : "Extension API failed", 500);
