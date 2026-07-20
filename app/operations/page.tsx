@@ -1,14 +1,28 @@
-import Link from "next/link";
+import RoleGate from "@/components/RoleGate";
+import WorkspaceDashboard from "@/components/WorkspaceDashboard";
+import { getSession } from "@/lib/auth";
+import { getRecentApplicants, getRecentAppointments, getTableCounts } from "@/lib/dashboardData";
+import { canOpenRole } from "@/lib/roles";
 
-export default function OperationsPage() {
+export default async function OperationsPage() {
+  const session = getSession();
+  if (!canOpenRole(session, "operations")) {
+    return <RoleGate session={session} role="operations" title="Operations" />;
+  }
+
+  const [counts, appointments, applicants] = await Promise.all([
+    getTableCounts(),
+    getRecentAppointments(8),
+    getRecentApplicants(6)
+  ]);
+
   return (
-    <main className="login-shell">
-      <section className="login-card">
-        <div className="brand">Franbooking</div>
-        <h1>Operations</h1>
-        <p>Operations migration screen is next to port.</p>
-        <Link className="primary-link" href="/login">Back to Login</Link>
-      </section>
-    </main>
+    <WorkspaceDashboard
+      title="Operations"
+      session={session!}
+      counts={counts.filter((item) => ["appointments", "sales_nav_inventory", "applicants", "clients"].includes(item.table))}
+      rows={[...appointments, ...applicants].slice(0, 12)}
+      rowTitle="Appointments and Applicants"
+    />
   );
 }

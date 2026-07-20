@@ -1,0 +1,93 @@
+import { getSupabaseAdmin } from "./supabaseAdmin";
+
+type CountResult = {
+  table: string;
+  label: string;
+  count: number;
+};
+
+const COUNT_TABLES = [
+  ["app_users", "Users"],
+  ["clients", "Clients"],
+  ["campaigns", "Campaigns"],
+  ["contacts", "FU Contacts"],
+  ["outreach_logs", "Outreach Logs"],
+  ["appointments", "Appointments"],
+  ["leads_ledger", "Leads Ledger"],
+  ["time_logs", "Time Logs"],
+  ["applicants", "Applicants"],
+  ["agent_logs", "Agent Logs"],
+  ["daily_tasks", "Daily Tasks"],
+  ["sales_nav_inventory", "Sales Nav Seats"],
+  ["costs", "Costs"],
+  ["client_payments", "Client Payments"]
+] as const;
+
+export async function getTableCounts(): Promise<CountResult[]> {
+  const supabase = getSupabaseAdmin();
+  const counts = await Promise.all(
+    COUNT_TABLES.map(async ([table, label]) => {
+      const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
+      return { table, label, count: error ? 0 : count || 0 };
+    })
+  );
+  return counts;
+}
+
+export async function getAdminUsers() {
+  const supabase = getSupabaseAdmin();
+  const { data: users, error: usersError } = await supabase
+    .from("app_users")
+    .select("id,email,name,role,legacy_type,legacy_sheet_id,status,updated_at")
+    .order("role", { ascending: true })
+    .order("name", { ascending: true });
+  if (usersError) throw usersError;
+
+  const ids = (users || []).map((user: { id: string }) => user.id);
+  const { data: credits, error: creditsError } = ids.length
+    ? await supabase
+        .from("recruiter_credits")
+        .select("user_id,nurture_balance,outreach_balance,profile_balance,nurture_limit,outreach_limit,profile_limit,used_today,used_alltime")
+        .in("user_id", ids)
+    : { data: [], error: null };
+  if (creditsError) throw creditsError;
+
+  const creditsByUser = new Map((credits || []).map((credit: { user_id: string }) => [credit.user_id, credit]));
+  return (users || []).map((user: { id: string }) => ({
+    ...user,
+    credits: creditsByUser.get(user.id) || null
+  }));
+}
+
+export async function getRecentAppointments(limit = 10) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("invitee_name,client_name,recruiter_name,status,event_start_at,event_created_at")
+    .order("event_created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getRecentApplicants(limit = 10) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("applicants")
+    .select("name,email,status,assigned_agent,created_at,updated_at")
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getDailyTasks(limit = 12) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("daily_tasks")
+    .select("title,topic,priority,status,assigned_name,assigned_email,eta,created_at")
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}

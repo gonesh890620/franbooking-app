@@ -52,6 +52,61 @@ select {
   width: 100%;
 }
 
+.home-shell {
+  align-items: center;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 24px;
+}
+
+.home-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+  display: grid;
+  gap: 20px;
+  max-width: 620px;
+  padding: 30px;
+  width: 100%;
+}
+
+.home-panel h1 {
+  font-size: 30px;
+  margin-top: 8px;
+}
+
+.quick-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.quick-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 14px;
+  text-decoration: none;
+}
+
+.quick-card:hover {
+  border-color: #c4b5fd;
+  background: #faf5ff;
+}
+
+.quick-card span {
+  font-weight: 800;
+}
+
+.quick-card small {
+  color: var(--muted);
+}
+
 .brand {
   color: var(--brand);
   font-size: 14px;
@@ -118,6 +173,10 @@ h3 {
   margin: 0 auto;
   max-width: 1120px;
   padding: 18px;
+}
+
+.app-shell.wide {
+  max-width: 1320px;
 }
 
 .topbar {
@@ -188,6 +247,98 @@ h3 {
 .panel h2 {
   font-size: 16px;
   margin-bottom: 12px;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 14px;
+}
+
+.metric,
+.count-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.metric span,
+.count-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metric strong {
+  font-size: 28px;
+}
+
+.section-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  min-width: 860px;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.count-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.compact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-row {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.compact-row span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .form-grid {
