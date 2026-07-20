@@ -2,11 +2,8 @@ import Link from "next/link";
 
 export default function HomePage() {
   const accessLinks = [
-    { href: "/growth", label: "Growth" },
-    { href: "/recruiter", label: "Recruiter" },
-    { href: "/agent", label: "Agent" },
-    { href: "/operations", label: "Operations" },
-    { href: "/client", label: "Client" }
+    { href: "/login", label: "Login" },
+    { href: "/admin", label: "Admin" }
   ];
 
   return (
@@ -16,18 +13,17 @@ export default function HomePage() {
           <div className="brand">Franbooking</div>
           <h1>Company Access</h1>
           <p className="muted">
-            Sign in with your approved Franbooking account to open your workspace.
+            Open the user login or the admin console.
           </p>
         </div>
         <div className="quick-grid" aria-label="Quick access">
           {accessLinks.map((link) => (
             <Link key={link.href} className="quick-card" href={link.href}>
               <span>{link.label}</span>
-              <small>Open panel</small>
+              <small>Open access</small>
             </Link>
           ))}
         </div>
-        <Link className="primary-link" href="/login">Login</Link>
       </section>
     </main>
   );

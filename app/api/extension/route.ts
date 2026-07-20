@@ -12,6 +12,7 @@ import {
   checkLiDuplicate,
   getBillingStats,
   getReferralStats,
+  requestCredits,
   bulkSetCany,
   submitFeedback,
   submitLeave,
@@ -75,6 +76,7 @@ export async function GET(req: Request) {
       return json(await markStatus(email, param(url, "li"), "Profile Restricted", "No Action-Closed"));
     }
     if (api === "bulkSetCany") return json(await bulkSetCany(email, (param(url, "lis") || "").split("|").filter(Boolean)));
+    if (api === "requestCredits") return json(await requestCredits(email, param(url, "type") || "all"));
     if (api === "submitLeave") return json(await submitLeave(email, {
       leaveDate: param(url, "leaveDate"),
       duration: param(url, "duration"),

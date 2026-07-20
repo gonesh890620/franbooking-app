@@ -58,7 +58,7 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
   const [nurture, setNurture] = useState({ li: "", reply: "", nurtureType: "Interested", client: "", conversation: "" });
   const [contacts, setContacts] = useState<Array<{ name: string; li: string; status: string; client: string }>>([]);
   const [targetRows, setTargetRows] = useState<Array<Record<string, string>>>([]);
-  const [stats, setStats] = useState<{ period?: string; total?: number; byDate?: Array<{ date: string; count: number }> }>({});
+  const [stats, setStats] = useState<{ period?: string; total?: number; contacts?: number; outreach?: number; byDate?: Array<{ date: string; count: number }> }>({});
   const [feedback, setFeedback] = useState({ salesNavAll: true, salesNavNoCount: "", salesNavNoReason: "", unusual: "", responsesToday: "", comments: "" });
   const [leave, setLeave] = useState({ leaveDate: "", duration: "1", reason: "" });
 
@@ -155,6 +155,11 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
     await postTool("submitLeave", leave);
     setMessage("Leave request submitted.");
     setLeave({ leaveDate: "", duration: "1", reason: "" });
+  }
+
+  async function requestMoreCredits() {
+    await postTool("requestCredits", { type: "all" });
+    setMessage("Credit request sent.");
   }
 
   async function saveTask(task: Task, idx: number) {
@@ -267,6 +272,7 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
         <span className="credit-pill">{boot.usage?.nurtureBalance ?? "-"} Nurture</span>
         <span className="credit-pill">{boot.usage?.outreachBalance ?? "-"} Outreach</span>
         <span className="credit-pill">{boot.usage?.profileBalance ?? "-"} Profile</span>
+        <button className="btn btn-outline" onClick={requestMoreCredits}>Get More Credit</button>
       </div>
 
       {message && <div className="notice warn">{message}</div>}
@@ -378,6 +384,8 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
           <section className="metric-grid">
             <div className="metric"><span>Period</span><strong>{stats.period || "-"}</strong></div>
             <div className="metric"><span>Appointments</span><strong>{stats.total ?? 0}</strong></div>
+            <div className="metric"><span>FU Contacts</span><strong>{stats.contacts ?? 0}</strong></div>
+            <div className="metric"><span>Outreach Saves</span><strong>{stats.outreach ?? 0}</strong></div>
           </section>
           <div className="compact-list">
             {(stats.byDate || []).map((row) => (

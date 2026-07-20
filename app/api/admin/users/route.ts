@@ -25,6 +25,7 @@ export async function POST(req: Request) {
       const name = String(body.name || "").trim() || email;
       const legacyType = String(body.type || "PH").trim();
       if (!email) return json({ error: "Email is required" }, 400);
+      if (!String(body.password || "").trim()) return json({ error: "Password is required" }, 400);
       const { data: user, error: userError } = await supabase
         .from("app_users")
         .upsert({

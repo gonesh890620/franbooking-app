@@ -24,34 +24,25 @@ const COUNT_TABLES = [
 ] as const;
 
 export async function getTableCounts(): Promise<CountResult[]> {
-  let supabase;
-  try {
-    supabase = getSupabaseAdmin();
-  } catch {
-    return COUNT_TABLES.map(([table, label]) => ({ table, label, count: 0 }));
-  }
+  const supabase = getSupabaseAdmin();
   const counts = await Promise.all(
     COUNT_TABLES.map(async ([table, label]) => {
       const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
-      return { table, label, count: error ? 0 : count || 0 };
+      if (error) throw new Error(`${table}: ${error.message}`);
+      return { table, label, count: count || 0 };
     })
   );
   return counts;
 }
 
 export async function getAdminUsers() {
-  let supabase;
-  try {
-    supabase = getSupabaseAdmin();
-  } catch {
-    return [];
-  }
+  const supabase = getSupabaseAdmin();
   const { data: users, error: usersError } = await supabase
     .from("app_users")
     .select("id,email,name,role,legacy_type,legacy_sheet_id,status,updated_at")
     .order("role", { ascending: true })
     .order("name", { ascending: true });
-  if (usersError) return [];
+  if (usersError) throw new Error(`app_users: ${usersError.message}`);
 
   const ids = (users || []).map((user: { id: string }) => user.id);
   const { data: credits, error: creditsError } = ids.length
@@ -60,7 +51,7 @@ export async function getAdminUsers() {
         .select("user_id,nurture_balance,outreach_balance,profile_balance,nurture_limit,outreach_limit,profile_limit,used_today,used_alltime")
         .in("user_id", ids)
     : { data: [], error: null };
-  if (creditsError) return users || [];
+  if (creditsError) throw new Error(`recruiter_credits: ${creditsError.message}`);
 
   const creditsByUser = new Map((credits || []).map((credit: { user_id: string }) => [credit.user_id, credit]));
   return (users || []).map((user: { id: string }) => ({

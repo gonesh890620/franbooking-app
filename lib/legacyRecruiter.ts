@@ -761,23 +761,57 @@ export async function bulkSetCany(email: string, lis: string[]) {
 export async function getBillingStats(email: string, startDate = "", endDate = "") {
   const user = await findSupabaseUser(email);
   if (!user) return { period: "", total: 0, byDate: [] };
-  let query = (getSupabaseAdmin() as any)
+  const supabase = getSupabaseAdmin() as any;
+  let ledgerQuery = supabase
     .from("leads_ledger")
     .select("date_created")
-    .or(`recruiter_id.eq.${user.id},recruiter_name.eq.${user.name}`);
-  if (startDate) query = query.gte("date_created", `${startDate}T00:00:00Z`);
-  if (endDate) query = query.lte("date_created", `${endDate}T23:59:59Z`);
-  const { data } = await query;
+    .or(`recruiter_id.eq.${user.id},recruiter_name.ilike.%${user.name}%,recruiter_name.ilike.%${user.email}%`);
+  let contactQuery = supabase
+    .from("contacts")
+    .select("created_at,updated_at")
+    .eq("recruiter_id", user.id);
+  let outreachQuery = supabase
+    .from("outreach_logs")
+    .select("created_at")
+    .eq("recruiter_id", user.id);
+  if (startDate) {
+    ledgerQuery = ledgerQuery.gte("date_created", `${startDate}T00:00:00Z`);
+    contactQuery = contactQuery.gte("created_at", `${startDate}T00:00:00Z`);
+    outreachQuery = outreachQuery.gte("created_at", `${startDate}T00:00:00Z`);
+  }
+  if (endDate) {
+    ledgerQuery = ledgerQuery.lte("date_created", `${endDate}T23:59:59Z`);
+    contactQuery = contactQuery.lte("created_at", `${endDate}T23:59:59Z`);
+    outreachQuery = outreachQuery.lte("created_at", `${endDate}T23:59:59Z`);
+  }
+  const [{ data: ledger }, { data: contacts }, { data: outreach }] = await Promise.all([ledgerQuery, contactQuery, outreachQuery]);
   const byDate = new Map<string, number>();
-  (data || []).forEach((row: any) => {
+  (ledger || []).forEach((row: any) => {
     const date = String(row.date_created || "").slice(0, 10);
     if (date) byDate.set(date, (byDate.get(date) || 0) + 1);
   });
+  (contacts || []).forEach((row: any) => {
+    const date = String(row.created_at || row.updated_at || "").slice(0, 10);
+    if (date) byDate.set(date, byDate.get(date) || 0);
+  });
   return {
     period: startDate && endDate ? `${startDate} to ${endDate}` : "All imported data",
-    total: data?.length || 0,
+    total: ledger?.length || 0,
+    contacts: contacts?.length || 0,
+    outreach: outreach?.length || 0,
     byDate: Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ date, count }))
   };
+}
+
+export async function requestCredits(email: string, type = "all") {
+  const user = await findSupabaseUser(email);
+  if (!user) return { error: "Unauthorized" };
+  await (getSupabaseAdmin() as any).from("app_audit_log").insert({
+    actor_email: user.email,
+    action: "request_credits",
+    details: { name: user.name, type, requestedAt: new Date().toISOString() }
+  });
+  return { ok: true };
 }
 
 export async function getReferralStats(email: string, startDate = "", endDate = "") {

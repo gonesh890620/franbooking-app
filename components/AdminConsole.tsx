@@ -6,9 +6,10 @@ type AdminConsoleProps = {
   session: { name: string; email: string };
   counts: Array<{ table: string; label: string; count: number }>;
   users: Array<Record<string, any>>;
+  loadError?: string;
 };
 
-export default function AdminConsole({ session, counts, users }: AdminConsoleProps) {
+export default function AdminConsole({ session, counts, users, loadError }: AdminConsoleProps) {
   const [rows, setRows] = useState(users);
   const [message, setMessage] = useState("");
   const [newUser, setNewUser] = useState({ email: "", name: "", type: "PH", password: "", sheetId: "", nLimit: "0", oLimit: "0", pLimit: "0" });
@@ -28,27 +29,48 @@ export default function AdminConsole({ session, counts, users }: AdminConsolePro
   }
 
   async function createUser() {
-    await adminAction({ action: "create", ...newUser });
-    setRows((prev) => [...prev, { ...newUser, role: newUser.type, legacy_type: newUser.type, status: "approved", credits: { nurture_balance: newUser.nLimit, outreach_balance: newUser.oLimit, profile_balance: newUser.pLimit } }]);
-    setNewUser({ email: "", name: "", type: "PH", password: "", sheetId: "", nLimit: "0", oLimit: "0", pLimit: "0" });
+    try {
+      await adminAction({ action: "create", ...newUser });
+      setRows((prev) => [...prev.filter((row) => row.email !== newUser.email), { ...newUser, email: newUser.email.toLowerCase(), role: newUser.type, legacy_type: newUser.type, status: "approved", credits: { nurture_balance: newUser.nLimit, outreach_balance: newUser.oLimit, profile_balance: newUser.pLimit } }]);
+      setNewUser({ email: "", name: "", type: "PH", password: "", sheetId: "", nLimit: "0", oLimit: "0", pLimit: "0" });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Create/update failed");
+    }
   }
 
   async function setStatus(email: string, status: string) {
-    await adminAction({ action: "status", email, status });
-    setRows((prev) => prev.map((row) => row.email === email ? { ...row, status } : row));
+    try {
+      await adminAction({ action: "status", email, status });
+      setRows((prev) => prev.map((row) => row.email === email ? { ...row, status } : row));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Status update failed");
+    }
   }
 
   async function resetPassword(email: string) {
     const password = window.prompt(`New password for ${email}`);
     if (!password) return;
-    await adminAction({ action: "resetPassword", email, password });
+    try {
+      await adminAction({ action: "resetPassword", email, password });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Password reset failed");
+    }
   }
 
   async function topup(email: string) {
     const n = window.prompt("Nurture credits to add", "0") || "0";
     const o = window.prompt("Outreach credits to add", "0") || "0";
     const p = window.prompt("Profile credits to add", "0") || "0";
-    await adminAction({ action: "topup", email, n, o, p });
+    try {
+      await adminAction({ action: "topup", email, n, o, p });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Top up failed");
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/admin";
   }
 
   return (
@@ -59,6 +81,7 @@ export default function AdminConsole({ session, counts, users }: AdminConsolePro
           <h1>Admin Console</h1>
           <div className="muted">{session.name} | {session.email}</div>
         </div>
+        <button className="btn btn-outline" onClick={logout}>Logout</button>
       </div>
 
       <section className="metric-grid">
@@ -68,7 +91,8 @@ export default function AdminConsole({ session, counts, users }: AdminConsolePro
         <div className="metric"><span>FU Contacts</span><strong>{counts.find((c) => c.table === "contacts")?.count || 0}</strong></div>
       </section>
 
-      {message && <div className="notice success">{message}</div>}
+      {loadError && <div className="notice error">{loadError}</div>}
+      {message && <div className={message.toLowerCase().includes("failed") || message.toLowerCase().includes("missing") || message.toLowerCase().includes("invalid") ? "notice error" : "notice success"}>{message}</div>}
 
       <section className="panel">
         <div className="section-head">

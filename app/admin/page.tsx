@@ -1,5 +1,5 @@
 import AdminConsole from "@/components/AdminConsole";
-import RoleGate from "@/components/RoleGate";
+import AdminLogin from "@/components/AdminLogin";
 import { getSession } from "@/lib/auth";
 import { getAdminUsers, getTableCounts } from "@/lib/dashboardData";
 import { isAdminUser } from "@/lib/roles";
@@ -7,9 +7,13 @@ import { isAdminUser } from "@/lib/roles";
 export default async function AdminPage() {
   const session = getSession();
   if (!isAdminUser(session)) {
-    return <RoleGate session={session} role="admin" title="Admin" />;
+    return <AdminLogin />;
   }
 
-  const [counts, users] = await Promise.all([getTableCounts(), getAdminUsers()]);
-  return <AdminConsole session={session!} counts={counts} users={users} />;
+  try {
+    const [counts, users] = await Promise.all([getTableCounts(), getAdminUsers()]);
+    return <AdminConsole session={session!} counts={counts} users={users} />;
+  } catch (e) {
+    return <AdminConsole session={session!} counts={[]} users={[]} loadError={e instanceof Error ? e.message : "Admin data failed to load"} />;
+  }
 }

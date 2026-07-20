@@ -7,6 +7,7 @@ import {
   getNurtureTemplate,
   getOutreachTemplate,
   getReferralStats,
+  requestCredits,
   getTargetArea,
   getUnsureCriteria,
   submitFeedback,
@@ -39,6 +40,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const action = String(body.action || "");
     if (action === "bulkSetCany") return json(await bulkSetCany(session.email, Array.isArray(body.lis) ? body.lis : []));
+    if (action === "requestCredits") return json(await requestCredits(session.email, String(body.type || "all")));
     if (action === "submitLeave") return json(await submitLeave(session.email, {
       leaveDate: String(body.leaveDate || ""),
       duration: String(body.duration || "1"),
