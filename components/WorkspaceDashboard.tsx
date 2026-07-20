@@ -39,7 +39,7 @@ export default function WorkspaceDashboard({ title, session, counts, rows = [], 
             {rows.map((row, index) => (
               <div className="compact-row" key={index}>
                 <strong>{row.title || row.invitee_name || row.name || row.client_name || row.email || "Record"}</strong>
-                <span>{row.status || row.priority || row.client_name || row.assigned_agent || row.topic || "-"}</span>
+                <span>{row.status || row.priority || row.client_name || row.assigned_agent_name || row.topic || "-"}</span>
               </div>
             ))}
           </div>

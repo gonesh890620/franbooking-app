@@ -16,7 +16,7 @@ export default async function AgentPage() {
     <WorkspaceDashboard
       title="Agent Panel"
       session={session!}
-      counts={counts.filter((item) => ["applicants", "agent_logs", "daily_tasks", "time_logs"].includes(item.table))}
+      counts={counts.filter((item) => ["applicants", "agent_logs", "team_tasks", "time_logs"].includes(item.table))}
       rows={applicants}
       rowTitle="Applicant Pipeline"
     />

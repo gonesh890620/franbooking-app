@@ -17,7 +17,7 @@ const COUNT_TABLES = [
   ["time_logs", "Time Logs"],
   ["applicants", "Applicants"],
   ["agent_logs", "Agent Logs"],
-  ["daily_tasks", "Daily Tasks"],
+  ["team_tasks", "Team Tasks"],
   ["sales_nav_inventory", "Sales Nav Seats"],
   ["costs", "Costs"],
   ["client_payments", "Client Payments"]
@@ -66,7 +66,7 @@ export async function getRecentAppointments(limit = 10) {
     .select("invitee_name,client_name,recruiter_name,status,event_start_at,event_created_at")
     .order("event_created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) return [];
   return data || [];
 }
 
@@ -74,20 +74,20 @@ export async function getRecentApplicants(limit = 10) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("applicants")
-    .select("name,email,status,assigned_agent,created_at,updated_at")
+    .select("name,email,status,assigned_agent_name,created_at,updated_at")
     .order("updated_at", { ascending: false, nullsFirst: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) return [];
   return data || [];
 }
 
 export async function getDailyTasks(limit = 12) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("daily_tasks")
+    .from("team_tasks")
     .select("title,topic,priority,status,assigned_name,assigned_email,eta,created_at")
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
-  if (error) throw error;
+  if (error) return [];
   return data || [];
 }
