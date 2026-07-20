@@ -10,6 +10,10 @@ export default async function ClientPage() {
     return <RoleGate session={session} role="client" title="Client" />;
   }
 
-  const initial = await getClientPortalPayload(session!);
-  return <ClientPortal session={session!} initial={initial} />;
+  try {
+    const initial = await getClientPortalPayload(session!);
+    return <ClientPortal session={session!} initial={initial} />;
+  } catch (e) {
+    return <ClientPortal session={session!} initial={{}} loadError={e instanceof Error ? e.message : "Client data failed to load"} />;
+  }
 }

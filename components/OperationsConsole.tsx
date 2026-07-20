@@ -18,7 +18,7 @@ type ContactSearchResult = {
 
 type OperationsSession = { name: string; email: string; impersonatorEmail?: string; impersonatorName?: string };
 
-export default function OperationsConsole({ session, initial }: { session: OperationsSession; initial: any }) {
+export default function OperationsConsole({ session, initial, loadError }: { session: OperationsSession; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState<"appointments" | "salesnav" | "pipeline" | "clients">("appointments");
   const [message, setMessage] = useState("");
@@ -99,6 +99,7 @@ export default function OperationsConsole({ session, initial }: { session: Opera
           Viewing as {session.name} — <button className="btn btn-outline" onClick={returnToGrowth}>Return to Growth</button>
         </div>
       )}
+      {loadError && <div className="notice error">Operations data failed to load: {loadError}</div>}
       {message && <div className="notice success">{message}</div>}
       <section className="metric-grid">
         <div className="metric"><span>Pending Appts</span><strong>{pending.length}</strong></div>

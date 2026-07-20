@@ -20,7 +20,7 @@ function BarChart({ rows, labelKey, valueKey }: { rows: Array<Record<string, any
   );
 }
 
-export default function ClientPortal({ session, initial }: { session: { name: string; email: string }; initial: any }) {
+export default function ClientPortal({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState<"dashboard" | "leads">("dashboard");
   const [q, setQ] = useState("");
@@ -75,6 +75,7 @@ export default function ClientPortal({ session, initial }: { session: { name: st
         </div>
         <button className="btn btn-outline" onClick={reload}>Refresh</button>
       </div>
+      {loadError && <div className="notice error">Client data failed to load: {loadError}</div>}
       <div className="tabs">
         <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>Dashboard</button>
         <button className={`tab ${tab === "leads" ? "active" : ""}`} onClick={() => setTab("leads")}>Leads</button>

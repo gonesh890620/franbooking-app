@@ -10,11 +10,11 @@ export default async function OperationsPage() {
     return <RoleGate session={session} role="operations" title="Operations" />;
   }
 
-  const initial = await getOperationsPayload();
-  return (
-    <OperationsConsole
-      session={{ name: session!.name, email: session!.email, impersonatorEmail: session!.impersonatorEmail, impersonatorName: session!.impersonatorName }}
-      initial={initial}
-    />
-  );
+  const opsSession = { name: session!.name, email: session!.email, impersonatorEmail: session!.impersonatorEmail, impersonatorName: session!.impersonatorName };
+  try {
+    const initial = await getOperationsPayload();
+    return <OperationsConsole session={opsSession} initial={initial} />;
+  } catch (e) {
+    return <OperationsConsole session={opsSession} initial={{}} loadError={e instanceof Error ? e.message : "Operations data failed to load"} />;
+  }
 }

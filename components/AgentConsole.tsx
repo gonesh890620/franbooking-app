@@ -25,7 +25,7 @@ function ScriptBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
-export default function AgentConsole({ session, initial }: { session: { name: string; email: string }; initial: any }) {
+export default function AgentConsole({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
   const [selectedId, setSelectedId] = useState<string>(initial.applicants?.[0]?.id || "");
   const [message, setMessage] = useState("");
@@ -95,6 +95,7 @@ export default function AgentConsole({ session, initial }: { session: { name: st
         </div>
         <button className="btn btn-outline" onClick={reload}>Refresh</button>
       </div>
+      {loadError && <div className="notice error">Agent data failed to load: {loadError}</div>}
       {message && <div className="notice success">{message}</div>}
 
       <section className="grid two">

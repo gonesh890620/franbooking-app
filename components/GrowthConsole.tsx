@@ -4,7 +4,7 @@ import { useState } from "react";
 
 type ChatTurn = { role: "user" | "assistant"; text: string };
 
-export default function GrowthConsole({ session, initial }: { session: { name: string; email: string }; initial: any }) {
+export default function GrowthConsole({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState<"dashboard" | "recruiters" | "clients" | "finance" | "tasks" | "reports">("dashboard");
   const [task, setTask] = useState({ title: "", topic: "", priority: "Normal", description: "" });
@@ -90,6 +90,7 @@ export default function GrowthConsole({ session, initial }: { session: { name: s
         <button className="btn btn-outline" onClick={reload}>Refresh</button>
       </div>
 
+      {loadError && <div className="notice error">Growth data failed to load: {loadError}</div>}
       {message && <div className="notice error">{message}</div>}
 
       <div className="tabs">

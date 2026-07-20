@@ -10,6 +10,10 @@ export default async function GrowthPage() {
     return <RoleGate session={session} role="growth" title="Growth" />;
   }
 
-  const initial = await getGrowthPayload();
-  return <GrowthConsole session={session!} initial={initial} />;
+  try {
+    const initial = await getGrowthPayload();
+    return <GrowthConsole session={session!} initial={initial} />;
+  } catch (e) {
+    return <GrowthConsole session={session!} initial={{}} loadError={e instanceof Error ? e.message : "Growth data failed to load"} />;
+  }
 }
