@@ -46,7 +46,7 @@ function PeriodTable({ title, rows }: { title: string; rows: Array<{ label: stri
 
 export default function GrowthConsole({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
-  const [tab, setTab] = useState<"dashboard" | "recruiters" | "clients" | "finance" | "tasks" | "reports">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "recruiters" | "clients" | "finance" | "tasks" | "reports" | "linkbooking" | "vendors">("dashboard");
   const [task, setTask] = useState({ title: "", topic: "", priority: "Normal", description: "" });
   const [cost, setCost] = useState({ amount: "", description: "", notes: "" });
   const [payment, setPayment] = useState({ clientName: "", totalBilled: "", status: "Paid", invoiceRef: "" });
@@ -197,6 +197,20 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     setListModal({ title: `${label} (${names.length})`, rows: names.map((n) => ({ label: n })) });
   }
 
+  // Wait List tile is a literal separate sheet tab (prospective clients not
+  // yet launched) — distinct from the Master-Tracker "waitlist" status
+  // bucket above, which showClientBucket handles. Fetched fresh on click
+  // since it's a small, infrequently-checked list.
+  async function showWaitList() {
+    try {
+      const payload = await action({ action: "waitList" });
+      const rows: Array<{ name: string; sub: string }> = payload.rows || [];
+      setListModal({ title: `Wait List (${rows.length})`, rows: rows.map((r) => ({ label: r.name, sub: r.sub })) });
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load Wait List");
+    }
+  }
+
   function showRecruiterStatusBucket(bucket: string, label: string) {
     const rows: any[] = onlineStatus?.[bucket] || [];
     setListModal({ title: `${label} (${rows.length})`, rows: rows.map((r) => ({ label: r.name, sub: `${r.type}${r.lastSeen ? ` — last seen ${new Date(r.lastSeen).toLocaleString()}` : ""}` })) });
@@ -235,7 +249,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Improving" value={clients.improving ?? 0} color="#2563eb" onClick={() => showClientBucket("improving", "Improving")} />
           <StatTile label="Paused" value={clients.paused ?? 0} color="#b45309" onClick={() => showClientBucket("paused", "Paused")} />
           <StatTile label="Active Clients" value={clients.activeClients ?? 0} color="#059669" />
-          <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={() => showClientBucket("waitlist", "Wait List (Master Tracker)")} />
+          <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={showWaitList} />
         </section>
 
         <div className="section-head" style={{ marginTop: 14 }}><h2>📅 Appointments</h2></div>
@@ -264,14 +278,67 @@ export default function GrowthConsole({ session, initial, loadError }: { session
         </div>
       </section>
 
-      <div className="tabs" style={{ marginTop: 14 }}>
-        <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>📊 Dashboard</button>
-        <button className={`tab ${tab === "recruiters" ? "active" : ""}`} onClick={openRecruitersTab}>👥 Recruiters</button>
-        <button className={`tab ${tab === "clients" ? "active" : ""}`} onClick={() => setTab("clients")}>🏢 Client Tracker</button>
-        <button className={`tab ${tab === "finance" ? "active" : ""}`} onClick={() => setTab("finance")}>💰 Finance</button>
-        <button className={`tab ${tab === "tasks" ? "active" : ""}`} onClick={() => setTab("tasks")}>📋 Daily Task</button>
-        <button className={`tab ${tab === "reports" ? "active" : ""}`} onClick={openReportsTab}>📈 Reports</button>
-      </div>
+      {tab === "dashboard" ? (
+        <section className="panel">
+          <div className="section-head"><h2>Sections</h2></div>
+          <p className="muted" style={{ margin: 0 }}>Select a section below to see its full details.</p>
+          <div className="section-tile-grid">
+            <button className="section-tile" onClick={() => setTab("tasks")}>
+              <span className="section-tile-icon">📋</span>
+              <span>
+                <div className="section-tile-title">Daily Task</div>
+                <div className="muted">Personal task list grouped by topic — priority, ETA/TBD, and auto-generated recurring tasks</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={openRecruitersTab}>
+              <span className="section-tile-icon">👥</span>
+              <span>
+                <div className="section-tile-title">Recruiters <span className="muted" style={{ fontWeight: 400 }}>(Recruiter Activity)</span></div>
+                <div className="muted">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={() => setTab("clients")}>
+              <span className="section-tile-icon">🏢</span>
+              <span>
+                <div className="section-tile-title">Client Tracker</div>
+                <div className="muted">Every client — quota, cycle, status, and payment in one table</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={() => setTab("linkbooking")}>
+              <span className="section-tile-icon">🔗</span>
+              <span>
+                <div className="section-tile-title">Link Open vs Booking</div>
+                <div className="muted">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={() => setTab("finance")}>
+              <span className="section-tile-icon">💰</span>
+              <span>
+                <div className="section-tile-title">Finance <span className="muted" style={{ fontWeight: 400 }}>(Cost &amp; Payments)</span></div>
+                <div className="muted">Company age, all-time cost &amp; earnings, and adding new cost/payment entries</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={openReportsTab}>
+              <span className="section-tile-icon">📈</span>
+              <span>
+                <div className="section-tile-title">Reports <span className="muted" style={{ fontWeight: 400 }}>(Billing Cycle &amp; Directory)</span></div>
+                <div className="muted">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time appts, sends &amp; Sales Nav seats</div>
+              </span>
+            </button>
+            <button className="section-tile" onClick={() => setTab("vendors")}>
+              <span className="section-tile-icon">🏬</span>
+              <span>
+                <div className="section-tile-title">Vendor Management</div>
+                <div className="muted">Every LI profile by vendor — issue history, vendor feedback, replacements, and downtime per cycle</div>
+              </span>
+            </button>
+          </div>
+        </section>
+      ) : (
+        <div className="actions" style={{ marginTop: 14, marginBottom: 4 }}>
+          <button className="btn btn-outline" onClick={() => setTab("dashboard")}>← Dashboard</button>
+        </div>
+      )}
 
       {tab === "dashboard" && (
         <>
@@ -594,6 +661,20 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             )}
           </section>
         </>
+      )}
+
+      {tab === "linkbooking" && (
+        <section className="panel">
+          <h2>🔗 Link Open vs Booking</h2>
+          <p className="muted">Not built yet — this needs Google Analytics Data API access (property "FranBooking Calendly") that this app doesn't have configured. Waiting on GA4 Viewer access + the Analytics Data API enabled for the service account before this section can be built.</p>
+        </section>
+      )}
+
+      {tab === "vendors" && (
+        <section className="panel">
+          <h2>🏬 Vendor Management</h2>
+          <p className="muted">Not built yet — a separate, sizeable stage (Vendor/Profile/Order/Issue tracking) not yet scoped.</p>
+        </section>
       )}
 
       {listModal && (

@@ -6,7 +6,7 @@ import { setSession } from "@/lib/auth";
 import { updateMasterTrackerClientStatus } from "@/lib/masterTracker";
 import { brainstormWithCeo } from "@/lib/ai";
 import { roleForLegacyType } from "@/lib/legacyRecruiter";
-import { getNurtureFuStats, getRecruiterDirectory, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange } from "@/lib/growthDashboard";
+import { getNurtureFuStats, getRecruiterDirectory, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange, getWaitList } from "@/lib/growthDashboard";
 import { appendClientPaymentToSheet, appendCostToSheet, appendTaskToSheet, reassignTaskInSheet, updateTaskStatusInSheet } from "@/lib/growthSheets";
 
 export async function GET() {
@@ -142,6 +142,9 @@ export async function POST(req: Request) {
     }
     if (action === "leaveTomorrow") {
       return json({ rows: await getRecruitersOnLeaveTomorrow() });
+    }
+    if (action === "waitList") {
+      return json({ rows: await getWaitList() });
     }
     // New Nurture Sent / FU Sent — scans every recruiter's own FU Tracker
     // sheet live, so this is the slowest panel; lazy-loaded on first open.

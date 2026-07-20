@@ -97,11 +97,17 @@ export async function getGrowthDashboard() {
   const roster = await getRoster();
   const rosterById = new Map(roster.map((r) => [r.id, r]));
 
-  const [campaignsRes, waitListRes, salesNavRes] = await Promise.all([
+  const [campaignsRes, waitListRes, salesNavRes, allUsersRes] = await Promise.all([
     supabase.from("campaigns").select("campaign_name,campaign_status"),
     supabase.from("wait_list").select("id", { count: "exact", head: true }),
-    supabase.from("sales_nav_inventory").select("date_added")
+    supabase.from("sales_nav_inventory").select("date_added"),
+    // Broader than the active-recruiter roster — used only as a name
+    // fallback for sends attributed to a user who no longer qualifies as an
+    // active recruiter (status changed, reassigned, etc.), so the drilldown
+    // shows their real name instead of "Unknown".
+    supabase.from("app_users").select("id,name")
   ]);
+  const allUsersById = new Map((allUsersRes.data || []).map((u: any) => [u.id, u.name as string]));
 
   // --- Client Status ---
   const clients = { onFire: 0, smokin: 0, onTrack: 0, improving: 0, paused: 0, waitlist: 0, active: 0, other: 0, total: 0 };
@@ -161,7 +167,7 @@ export async function getGrowthDashboard() {
   });
   const sendsByRecruiterList = (period: keyof PeriodCounts) =>
     Array.from(sendsByRecruiterPeriod.entries())
-      .map(([id, counts]) => ({ name: rosterById.get(id)?.name || "Unknown", type: rosterById.get(id)?.type || "PH", count: counts[period] }))
+      .map(([id, counts]) => ({ name: rosterById.get(id)?.name || allUsersById.get(id) || "Unknown", type: rosterById.get(id)?.type || "", count: counts[period] }))
       .filter((r) => r.count > 0)
       .sort((a, b2) => b2.count - a.count);
 
@@ -286,6 +292,22 @@ async function recruitersOnLeaveForDate(dateStr: string) {
 
 export async function getRecruitersOnLeave() {
   return recruitersOnLeaveForDate(dayKey(new Date()));
+}
+
+// Wait List tile drilldown — matches GAS apiCeoGetWaitList. This is the
+// literal Wait List sheet tab (prospective clients not yet launched),
+// distinct from the Master-Tracker-status-cascade "waitlist" bucket in
+// clients.byBucket, which is a different thing entirely (a client whose
+// Current Status text happens to contain "wait").
+export async function getWaitList() {
+  const { data } = await (getSupabaseAdmin() as any)
+    .from("wait_list")
+    .select("client_name,contact_email,eta_launch,notes")
+    .order("entry_date", { ascending: false });
+  return (data || []).map((row: any) => ({
+    name: row.client_name || "",
+    sub: [row.eta_launch ? `ETA: ${row.eta_launch}` : "", row.contact_email || ""].filter(Boolean).join(" · ")
+  }));
 }
 
 export async function getRecruitersOnLeaveTomorrow() {
