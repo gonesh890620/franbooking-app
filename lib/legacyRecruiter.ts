@@ -2,6 +2,7 @@ import { CONFIG } from "./config";
 import { clearSession, setSession } from "./auth";
 import { appendValues, colName, findSheetTitle, getValues, quoteSheetName, updateValues } from "./sheets";
 import { cleanClientName, FU, normalizeDateCell, normalizeLi, RC, SheetRow, todayIso } from "./legacyMaps";
+import { getSupabaseAdmin } from "./supabaseAdmin";
 
 const ACCESS_TAB = "Recruiters";
 
@@ -44,6 +45,135 @@ export type DailyTask = {
   daysWaiting?: number | null;
   paused?: boolean;
 };
+
+async function findSupabaseUser(email: string): Promise<{ id: string; email: string; name: string } | null> {
+  try {
+    const { data } = await (getSupabaseAdmin() as any)
+      .from("app_users")
+      .select("id,email,name")
+      .eq("email", String(email || "").toLowerCase().trim())
+      .maybeSingle();
+    return data || null;
+  } catch {
+    return null;
+  }
+}
+
+async function findOrCreateSupabaseClient(name: string): Promise<string | null> {
+  const cleaned = cleanClientName(name);
+  if (!cleaned) return null;
+  try {
+    const supabase = getSupabaseAdmin() as any;
+    const { data: existing } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("name", cleaned)
+      .maybeSingle();
+    const existingClient = existing as { id?: string } | null;
+    if (existingClient?.id) return existingClient.id;
+
+    const { data: inserted } = await supabase
+      .from("clients")
+      .insert({ name: cleaned })
+      .select("id")
+      .single();
+    const insertedClient = inserted as { id?: string } | null;
+    return insertedClient?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+async function upsertSupabaseContact(email: string, data: {
+  name?: string;
+  li: string;
+  clientName?: string;
+  status?: string;
+  nextAction?: string;
+  conversation?: string;
+  reply?: string;
+  source?: string;
+  salesNavId?: string;
+  code?: string;
+  tag?: string;
+  cany?: boolean;
+  outreachType?: string;
+  legacyRow?: number;
+  lastNurtureType?: string;
+  dateJ?: string;
+  dateK?: string;
+  dateL?: string;
+  dateM?: string;
+}) {
+  const user = await findSupabaseUser(email);
+  const normalized = normalizeLi(data.li);
+  if (!user || !normalized) return;
+
+  const clientId = await findOrCreateSupabaseClient(data.clientName || "");
+  try {
+    await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .upsert({
+        recruiter_id: user.id,
+        recruiter_name: user.name,
+        recruiter_email: user.email,
+        name: data.name || "",
+        linkedin_url: data.li,
+        normalized_linkedin_url: normalized,
+        client_id: clientId,
+        status: data.status || "",
+        next_action: data.nextAction || "",
+        conversation: data.conversation || "",
+        reply: data.reply || "",
+        date_j: data.dateJ || null,
+        date_k: data.dateK || null,
+        date_l: data.dateL || null,
+        date_m: data.dateM || null,
+        source: data.source || "",
+        sales_nav_id: data.salesNavId || "",
+        code: data.code || "",
+        tag: data.tag || "",
+        cany: Boolean(data.cany),
+        outreach_type: data.outreachType || "",
+        legacy_row: data.legacyRow || null,
+        last_nurture_type: data.lastNurtureType || "",
+        last_synced_to_sheet_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: "recruiter_id,normalized_linkedin_url" });
+  } catch {
+    // Sheet save remains the fallback until the Supabase cutover SQL is applied.
+  }
+}
+
+async function insertSupabaseOutreach(email: string, data: {
+  name: string;
+  li: string;
+  outreachType: string;
+  subject: string;
+  message: string;
+}) {
+  const user = await findSupabaseUser(email);
+  if (!user) return;
+  try {
+    const { data: contact } = await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("id")
+      .eq("recruiter_id", user.id)
+      .eq("normalized_linkedin_url", normalizeLi(data.li))
+      .maybeSingle();
+    await (getSupabaseAdmin() as any).from("outreach_logs").insert({
+      recruiter_id: user.id,
+      contact_id: contact?.id || null,
+      prospect_name: data.name,
+      linkedin_url: data.li,
+      outreach_type: data.outreachType,
+      subject: data.subject,
+      message: data.message
+    });
+  } catch {
+    // Non-blocking during transition.
+  }
+}
 
 export async function findRecruiter(email: string): Promise<RecruiterRecord | null> {
   const values = await getValues(CONFIG.accessSheetId, `${quoteSheetName(ACCESS_TAB)}!A2:T`);
@@ -139,6 +269,24 @@ async function getDailyAssignmentSheet(email: string) {
 export async function getUsage(email: string) {
   const rec = await findRecruiter(email);
   if (!rec) return { error: "Unauthorized" };
+  const supabaseUser = await findSupabaseUser(email);
+  if (supabaseUser) {
+    const { data } = await (getSupabaseAdmin() as any)
+      .from("recruiter_credits")
+      .select("nurture_balance,outreach_balance,profile_balance,nurture_limit,outreach_limit,profile_limit")
+      .eq("user_id", supabaseUser.id)
+      .maybeSingle();
+    if (data) {
+      return {
+        nurtureBalance: Number(data.nurture_balance || 0),
+        outreachBalance: Number(data.outreach_balance || 0),
+        profileBalance: Number(data.profile_balance || 0),
+        nurtureLimit: Number(data.nurture_limit || 0),
+        outreachLimit: Number(data.outreach_limit || 0),
+        profileLimit: Number(data.profile_limit || 0)
+      };
+    }
+  }
   return {
     nurtureBalance: rec.nBal,
     outreachBalance: rec.oBal,
@@ -150,6 +298,25 @@ export async function getUsage(email: string) {
 }
 
 export async function getClients(email: string) {
+  const supabaseUser = await findSupabaseUser(email);
+  if (supabaseUser) {
+    const { data } = await (getSupabaseAdmin() as any)
+      .from("recruiter_client_assignments")
+      .select("status,event_url,nurture_pct,cany_appts,flag_notes,clients(name)")
+      .eq("recruiter_id", supabaseUser.id);
+    const clients = (data || [])
+      .map((row: any) => ({
+        name: cleanClientName(row.clients?.name || ""),
+        status: String(row.status || "").trim(),
+        eventUrl: String(row.event_url || "").trim(),
+        nurturePct: String(row.nurture_pct || "").trim(),
+        canyAppts: String(row.cany_appts || "").trim(),
+        flagNotes: String(row.flag_notes || "").trim()
+      }))
+      .filter((client: ClientAssignment) => client.name);
+    if (clients.length) return { clients };
+  }
+
   const sheet = await getDailyAssignmentSheet(email);
   if (!sheet) return { clients: [], error: "Daily Assignment tab not found" };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:F`);
@@ -168,7 +335,7 @@ export async function getClients(email: string) {
 
 export async function getClientStatus(email: string, clientName: string) {
   const result = await getClients(email);
-  const clients = "clients" in result ? result.clients : [];
+  const clients: ClientAssignment[] = "clients" in result ? result.clients : [];
   return clients.find((c) => c.name === cleanClientName(clientName))?.status || "";
 }
 
@@ -254,7 +421,101 @@ function deriveTaskFromRow(row: SheetRow, rowNumber: number, today: string): { t
   return result;
 }
 
+function deriveTaskFromContact(row: any, today: string): { todayTask?: DailyTask; reviewTask?: DailyTask } {
+  const name = String(row.name || "").trim();
+  const li = String(row.linkedin_url || "").trim();
+  if (!name && !li) return {};
+  const status = String(row.reply || row.status || "").trim();
+  const sl = status.toLowerCase();
+  if (["booked", "closed", "not interested", "recalled", "done", "profile restricted"].includes(sl)) return {};
+
+  const addDays = (date: string, days: number) => {
+    if (!date) return "";
+    const d = new Date(`${date}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const due = (date: string) => Boolean(date && date <= today);
+  const dJ = normalizeDateCell(row.date_j);
+  const dK = normalizeDateCell(row.date_k);
+  const dL = normalizeDateCell(row.date_l);
+  const dM = normalizeDateCell(row.date_m);
+
+  let isDue = false;
+  let stage = "";
+  let nurtureType = "";
+  if (sl === "interested") {
+    isDue = due(dJ);
+    stage = "SDFU Due";
+    nurtureType = "SDFU";
+  } else if (sl === "sdfu sent" || sl === "unsure" || sl === "unsure srfu") {
+    isDue = due(addDays(dJ, 1));
+    stage = "FU1 Due";
+    nurtureType = "FU1";
+  } else if (sl.includes("fu1") || sl === "int fu1 sent") {
+    isDue = due(addDays(dK || dJ, 1));
+    stage = "FU2 Due";
+    nurtureType = "FU2";
+  } else if (sl.includes("fu2") || sl === "int fu2 sent") {
+    isDue = due(addDays(dL || dK, 1));
+    stage = "FU3 Due";
+    nurtureType = "FU3";
+  } else if (sl === "dm-sn expire") {
+    isDue = due(addDays(dL, 1));
+    stage = "FU3 Due";
+    nurtureType = "FU3";
+  }
+
+  const base = {
+    name,
+    li,
+    client: cleanClientName(row.clients?.name || ""),
+    row: Number(row.legacy_row || 0),
+    status,
+    notes: String(row.sales_nav_id || row.code || "").trim(),
+    canyFlag: row.cany ? "Yes" : ""
+  };
+
+  const result: { todayTask?: DailyTask; reviewTask?: DailyTask } = {};
+  if (isDue && stage !== "Review Due") result.todayTask = { ...base, stage, nurtureType };
+  if (sl.includes("fu3")) {
+    const anchor = dM || dL;
+    const daysWaiting = anchor ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`)) / 86400000) : null;
+    result.reviewTask = { ...base, stage: "Review Due", nurtureType: "", daysWaiting };
+  }
+  return result;
+}
+
+async function getSupabaseDailyTasks(email: string) {
+  const user = await findSupabaseUser(email);
+  if (!user) return null;
+  try {
+    const { data, error } = await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("name,linkedin_url,status,reply,date_j,date_k,date_l,date_m,sales_nav_id,code,cany,legacy_row,clients(name)")
+      .eq("recruiter_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(5000);
+    if (error || !data) return null;
+    const today = todayIso();
+    const tasks: DailyTask[] = [];
+    const reviewTasks: DailyTask[] = [];
+    data.forEach((row: any) => {
+      const parsed = deriveTaskFromContact(row, today);
+      if (parsed.todayTask) tasks.push(parsed.todayTask);
+      if (parsed.reviewTask) reviewTasks.push(parsed.reviewTask);
+    });
+    reviewTasks.sort((a, b) => (b.daysWaiting ?? -1) - (a.daysWaiting ?? -1));
+    return { tasks, reviewTasks, canyMax: CONFIG.canyMax };
+  } catch {
+    return null;
+  }
+}
+
 export async function getDailyTasks(email: string) {
+  const supabaseTasks = await getSupabaseDailyTasks(email);
+  if (supabaseTasks) return supabaseTasks;
+
   const sheet = await getFuSheet(email);
   if (!sheet) return { tasks: [], reviewTasks: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -266,7 +527,7 @@ export async function getDailyTasks(email: string) {
     if (parsed.todayTask) tasks.push(parsed.todayTask);
     if (parsed.reviewTask) reviewTasks.push(parsed.reviewTask);
   }
-  const clients = (await getClients(email)).clients || [];
+  const clients: ClientAssignment[] = (await getClients(email)).clients || [];
   const paused = new Set(clients.filter((c) => /paused/i.test(c.status)).map((c) => c.name));
   tasks.forEach((t) => (t.paused = paused.has(t.client)));
   reviewTasks.forEach((t) => (t.paused = paused.has(t.client)));
@@ -275,6 +536,29 @@ export async function getDailyTasks(email: string) {
 }
 
 export async function getContacts(email: string, q: string) {
+  const supabaseUser = await findSupabaseUser(email);
+  if (supabaseUser) {
+    let query = (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("name,linkedin_url,status,legacy_row,cany,clients(name)")
+      .eq("recruiter_id", supabaseUser.id)
+      .order("updated_at", { ascending: false })
+      .limit(80);
+    const search = String(q || "").toLowerCase().trim();
+    if (search) query = query.or(`name.ilike.%${search}%,linkedin_url.ilike.%${search}%`);
+    const { data } = await query;
+    return {
+      contacts: (data || []).map((row: any) => ({
+        name: String(row.name || "").trim(),
+        li: String(row.linkedin_url || "").trim(),
+        status: String(row.status || "").trim(),
+        client: cleanClientName(row.clients?.name || ""),
+        canyFlag: row.cany ? "Yes" : "",
+        row: Number(row.legacy_row || 0)
+      }))
+    };
+  }
+
   const sheet = await getFuSheet(email);
   if (!sheet) return { contacts: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -332,6 +616,26 @@ export async function saveNurture(email: string, li: string, reply: string, nurt
   if (!row[FU.DATE_L] && nurtureType === "SalesNavRemove") row[FU.DATE_L] = today;
   const range = `${quoteSheetName(found.title)}!A${found.rowNumber}:Q${found.rowNumber}`;
   await updateValues(found.spreadsheetId, range, [row.slice(0, 17)]);
+  await upsertSupabaseContact(email, {
+    name: String(row[FU.NAME] || ""),
+    li,
+    clientName: cleanClientName(clientName || String(row[FU.CLIENT] || "")),
+    status: newStatus,
+    nextAction: String(row[FU.NEXT_ACTION] || ""),
+    conversation,
+    reply,
+    source: String(row[FU.SOURCE] || source || ""),
+    salesNavId: String(row[FU.SALES_NAV] || ""),
+    code: String(row[FU.CODE] || ""),
+    tag: String(row[FU.TAG] || ""),
+    cany: String(row[FU.CANY] || "").toLowerCase() === "yes",
+    legacyRow: found.rowNumber,
+    lastNurtureType: nurtureType,
+    dateJ: normalizeDateCell(row[FU.DATE_J]),
+    dateK: normalizeDateCell(row[FU.DATE_K]),
+    dateL: normalizeDateCell(row[FU.DATE_L]),
+    dateM: normalizeDateCell(row[FU.DATE_M])
+  });
   return { ok: true, newStatus };
 }
 
@@ -339,6 +643,14 @@ export async function markStatus(email: string, li: string, status: string, next
   const found = await findFuRowByLi(email, li);
   if (!found) return { error: "Contact not found." };
   await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!F${found.rowNumber}:G${found.rowNumber}`, [[status, nextAction]]);
+  await upsertSupabaseContact(email, {
+    name: String(found.row[FU.NAME] || ""),
+    li,
+    clientName: cleanClientName(String(found.row[FU.CLIENT] || "")),
+    status,
+    nextAction,
+    legacyRow: found.rowNumber
+  });
   return { ok: true };
 }
 
@@ -380,6 +692,24 @@ export async function saveOutreach(email: string, data: {
   }
   const rec = await findRecruiter(email);
   await appendValues(CONFIG.masterDbId, "'Sheet1'!A:G", [[today, data.name, data.li, "", "", "", rec?.name || email]]);
+  await upsertSupabaseContact(email, {
+    name: data.name,
+    li: data.li,
+    status: "Awaiting Response",
+    source: sourceLabel,
+    salesNavId: data.salesNavId || "",
+    code: data.subject || data.code || "",
+    cany: Boolean(data.isCany),
+    outreachType: data.outType,
+    legacyRow: found?.rowNumber
+  });
+  await insertSupabaseOutreach(email, {
+    name: data.name,
+    li: data.li,
+    outreachType: data.outType,
+    subject: data.subject || data.code || "",
+    message: data.content
+  });
   return { ok: true };
 }
 

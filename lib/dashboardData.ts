@@ -24,7 +24,12 @@ const COUNT_TABLES = [
 ] as const;
 
 export async function getTableCounts(): Promise<CountResult[]> {
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch {
+    return COUNT_TABLES.map(([table, label]) => ({ table, label, count: 0 }));
+  }
   const counts = await Promise.all(
     COUNT_TABLES.map(async ([table, label]) => {
       const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
@@ -35,13 +40,18 @@ export async function getTableCounts(): Promise<CountResult[]> {
 }
 
 export async function getAdminUsers() {
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch {
+    return [];
+  }
   const { data: users, error: usersError } = await supabase
     .from("app_users")
     .select("id,email,name,role,legacy_type,legacy_sheet_id,status,updated_at")
     .order("role", { ascending: true })
     .order("name", { ascending: true });
-  if (usersError) throw usersError;
+  if (usersError) return [];
 
   const ids = (users || []).map((user: { id: string }) => user.id);
   const { data: credits, error: creditsError } = ids.length
@@ -50,7 +60,7 @@ export async function getAdminUsers() {
         .select("user_id,nurture_balance,outreach_balance,profile_balance,nurture_limit,outreach_limit,profile_limit,used_today,used_alltime")
         .in("user_id", ids)
     : { data: [], error: null };
-  if (creditsError) throw creditsError;
+  if (creditsError) return users || [];
 
   const creditsByUser = new Map((credits || []).map((credit: { user_id: string }) => [credit.user_id, credit]));
   return (users || []).map((user: { id: string }) => ({
@@ -60,7 +70,12 @@ export async function getAdminUsers() {
 }
 
 export async function getRecentAppointments(limit = 10) {
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch {
+    return [];
+  }
   const { data, error } = await supabase
     .from("appointments")
     .select("invitee_name,client_name,recruiter_name,status,event_start_at,event_created_at")
@@ -71,7 +86,12 @@ export async function getRecentAppointments(limit = 10) {
 }
 
 export async function getRecentApplicants(limit = 10) {
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch {
+    return [];
+  }
   const { data, error } = await supabase
     .from("applicants")
     .select("name,email,status,assigned_agent_name,created_at,updated_at")
@@ -82,7 +102,12 @@ export async function getRecentApplicants(limit = 10) {
 }
 
 export async function getDailyTasks(limit = 12) {
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch {
+    return [];
+  }
   const { data, error } = await supabase
     .from("team_tasks")
     .select("title,topic,priority,status,assigned_name,assigned_email,eta,created_at")
