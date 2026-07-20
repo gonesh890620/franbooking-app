@@ -254,3 +254,25 @@ Phase 1 (data-architecture correctness) is done:
 - `npm run build` passes. **Not yet manually verified** — needs a real Agent session with an assigned applicant, and a Client session with real `leads_ledger` rows (including some with a `-N` cycle suffix and feedback/recall values) to check visually.
 
 This closes out all 6 phases of the original plan. See the "Not done" notes under Phases 3 and 5 above for the handful of deliberately-deferred lower-priority items (LI Screening reference card, full recruiter oversight breakdowns/reports, drilldown popups, Vendor Management, recurring tasks, and the 4-sheet Add/Update/Archive Client + Mark Ledger Sent flow).
+
+## Growth Panel Rebuild — Stage 1 (this session, in progress)
+
+The user asked for a full redesign of the Growth panel to match GAS's real `Growth.html` design/workflow exactly, not the simplified version built in Phase 5. Two research passes (full `Growth.html` read + full `apiCeoGetDashboard`/related Code.gs logic read) confirmed the real GAS Growth panel is roughly the size of everything else built this session combined: 8 sections (Dashboard/pinned block, Recruiters, Client Tracker, Reports w/ 3 sub-tabs, Link Open vs Booking via Google Analytics, Finance+Recruiter Payments, Daily Task+Recurring, Vendor Management), ~60 backend endpoints, ~25 modal types.
+
+**Agreed build order with the user:** Stage 1 = pinned block + Recruiters section (done). GA4-backed "Link Open vs Booking" was requested to be built eventually too (not skipped) — needs the user's GA4 property ID + confirmation the Google service account has Analytics Data API access before that can start; not begun yet. Client Tracker (full Add/Update/Archive Client + Mark Ledger Sent, slot-check/vacation-check badges), Reports, Finance+Recruiter Payments, Daily Task+Recurring, Vendor Management are separate future stages.
+
+**Key data-architecture decisions made (confirm with user if revisited):**
+- Calendar-day windows (midnight-anchored) for Today/Yesterday/Last7/14/28, NOT GAS's wall-clock-relative-to-page-load rolling windows — a deliberate, confirmed deviation for predictability.
+- Client Status bucketing replicates GAS's exact substring-cascade priority (fire > smok > track > improv > pause > wait > activ > other) against `campaigns.campaign_status`, not an enum.
+- "Sales Nav active" standardized on the computed-29-day-expiry definition (matches Phase 4's Operations Sales Nav logic) — GAS itself has two disagreeing definitions across different panels; this port picked one.
+- New Nurture Sent / FU Sent stats are read LIVE from each recruiter's actual FU Tracker Google Sheet (`lib/growthDashboard.ts`'s `getNurtureFuStats`), NOT from the Supabase `contacts` mirror — consistent with the FU-Tracker-is-Sheets-only architecture rule; this is the slowest panel (scans every recruiter's sheet) so it's lazy-loaded only when the Recruiters tab is first opened, matching GAS's own perf-driven split.
+- S2A/Top5/Non-Productive/Sends-by-recruiter are joined by `recruiter_id` (a real FK), not by lowercased display Name like GAS does — a deliberate data-quality improvement over GAS's fragile name-matching, made possible because `migrate-sheets.ts` already resolves names to IDs at import time.
+
+**Bugs found and fixed in `scripts/migrate-sheets.ts` while building this** (pre-existing, not introduced this session):
+1. Time Log import set `last_activity_at` to the import's own run-time for every row instead of the sheet's actual "Last Activity" column — this would have made "Inactive 5+ Days" always show nobody, no matter how stale someone really was. Fixed with a new `parseTimeLogTimestamp` helper that combines the row's Date column with its Start/End/Last-Activity time cells.
+2. `appointments` never captured the "Responses" column (needed for recall-reason categorization: Looking for Job / Vendor / Other) — added `responses` to the `appointments` table and import.
+3. The "Wait List" tab (prospective clients not yet launched) was never imported at all — added a `wait_list` table + `migrateWaitList`.
+
+**New files:** `lib/growthDashboard.ts` (all Stage-1 computations), `supabase/005_growth_dashboard_support.sql` (run this before the real data reset). **Changed:** `scripts/migrate-sheets.ts` (bug fixes above), `app/api/growth/route.ts` (+`onlineStatus`/`leaveToday`/`leaveTomorrow`/`nurtureFuStats`/`s2aRange` actions), `app/growth/page.tsx`, `components/GrowthConsole.tsx` (pinned block + full Recruiters section with lazy-loaded sub-panels and click-a-number drilldown modals), `app/styles.css` (`.metric.clickable`).
+
+**Status when this note was written:** dry-run migration verified twice (connectivity + fixed logic both confirmed working against live Sheets/Supabase), `npm run build` passes. The REAL (non-dry-run) `--reset` has NOT been run yet — waiting on the user to run `005_growth_dashboard_support.sql` in the Supabase SQL editor first (needed since `wait_list` and `appointments.responses` must exist before the reset writes to them). Not yet manually verified against fresh real data or pushed to GitHub as of this note.

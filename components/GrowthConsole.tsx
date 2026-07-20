@@ -3,6 +3,46 @@
 import { useState } from "react";
 
 type ChatTurn = { role: "user" | "assistant"; text: string };
+type PeriodKey = "today" | "yesterday" | "last7" | "last14" | "last28";
+const PERIODS: Array<{ key: PeriodKey; label: string }> = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "last7", label: "Last 7 Days" },
+  { key: "last14", label: "Last 14 Days" },
+  { key: "last28", label: "Last 28 Days" }
+];
+
+type ListModal = { title: string; rows: Array<{ label: string; sub?: string }> } | null;
+
+function StatTile({ label, value, sub, onClick, color }: { label: string; value: string | number; sub?: string; onClick?: () => void; color?: string }) {
+  return (
+    <div className={`metric ${onClick ? "clickable" : ""}`} onClick={onClick} style={{ cursor: onClick ? "pointer" : undefined }}>
+      <span>{label}</span>
+      <strong style={color ? { color } : undefined}>{value}</strong>
+      {sub && <div className="muted" style={{ fontSize: 11 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function PeriodTable({ title, rows }: { title: string; rows: Array<{ label: string; counts: Record<PeriodKey, number> }> }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr><th>{title}</th>{PERIODS.map((p) => <th key={p.key}>{p.label}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              {PERIODS.map((p) => <td key={p.key}>{row.counts[p.key]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function GrowthConsole({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
@@ -11,6 +51,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [cost, setCost] = useState({ amount: "", description: "", notes: "" });
   const [payment, setPayment] = useState({ clientName: "", totalBilled: "", status: "Paid", invoiceRef: "" });
   const [message, setMessage] = useState("");
+  const [listModal, setListModal] = useState<ListModal>(null);
 
   const [brainstormOpen, setBrainstormOpen] = useState(false);
   const [chat, setChat] = useState<ChatTurn[]>([]);
@@ -20,9 +61,21 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [impersonateRole, setImpersonateRole] = useState<"operations" | "recruiter" | null>(null);
   const [impersonateOptions, setImpersonateOptions] = useState<Array<{ email: string; name: string }>>([]);
 
+  const [recruitersLoaded, setRecruitersLoaded] = useState(false);
+  const [onlineStatus, setOnlineStatus] = useState<any>(null);
+  const [leaveToday, setLeaveToday] = useState<any[]>([]);
+  const [leaveTomorrow, setLeaveTomorrow] = useState<any[]>([]);
+  const [nurtureFu, setNurtureFu] = useState<any>(null);
+  const [showTop5, setShowTop5] = useState(false);
+  const [showNonProd, setShowNonProd] = useState(false);
+  const [s2aRange, setS2aRange] = useState({ startDate: "", endDate: "" });
+  const [s2aRangeData, setS2aRangeData] = useState<any>(null);
+  const [s2aRangeVisible, setS2aRangeVisible] = useState(5);
+
   async function reload() {
     const res = await fetch("/api/growth");
-    setData(await res.json());
+    const payload = await res.json();
+    setData((prev: any) => ({ ...prev, ...payload, dashboard: prev.dashboard }));
   }
   async function action(body: Record<string, unknown>) {
     setMessage("");
@@ -38,6 +91,42 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Action failed");
     }
+  }
+
+  async function openRecruitersTab() {
+    setTab("recruiters");
+    if (recruitersLoaded) return;
+    setRecruitersLoaded(true);
+    try {
+      const [online, today, tomorrow, nurture] = await Promise.all([
+        action({ action: "onlineStatus" }),
+        action({ action: "leaveToday" }),
+        action({ action: "leaveTomorrow" }),
+        action({ action: "nurtureFuStats" })
+      ]);
+      setOnlineStatus(online);
+      setLeaveToday(today.rows || []);
+      setLeaveTomorrow(tomorrow.rows || []);
+      setNurtureFu(nurture);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load recruiter activity");
+    }
+  }
+
+  async function loadS2ARange(startDate: string, endDate: string) {
+    setS2aRange({ startDate, endDate });
+    setS2aRangeVisible(5);
+    try {
+      setS2aRangeData(await action({ action: "s2aRange", startDate, endDate }));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load date range");
+    }
+  }
+
+  function quickRange(days: number) {
+    const end = new Date();
+    const start = new Date(end.getTime() - (days - 1) * 86400000);
+    void loadS2ARange(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
   }
 
   async function sendChat() {
@@ -78,6 +167,32 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   }
 
   const unreviewedFeedback = (data.feedback || []).filter((f: any) => !f.reviewed);
+  const dash = data.dashboard || {};
+  const clients = dash.clients || {};
+  const appts = dash.appts || {};
+  const allAppt = dash.allAppt || { received: {}, process: {}, recall: {}, recallReasons: {} };
+  const recruitersSummary = dash.recruiters || {};
+  const sends = dash.sends || {};
+  const s2aByType = dash.s2aByType || {};
+
+  function showClientBucket(bucket: string, label: string) {
+    const names: string[] = clients.byBucket?.[bucket] || [];
+    setListModal({ title: `${label} (${names.length})`, rows: names.map((n) => ({ label: n })) });
+  }
+
+  function showRecruiterStatusBucket(bucket: string, label: string) {
+    const rows: any[] = onlineStatus?.[bucket] || [];
+    setListModal({ title: `${label} (${rows.length})`, rows: rows.map((r) => ({ label: r.name, sub: `${r.type}${r.lastSeen ? ` — last seen ${new Date(r.lastSeen).toLocaleString()}` : ""}` })) });
+  }
+
+  function showLeaveModal(rows: any[], title: string) {
+    setListModal({ title: `${title} (${rows.length})`, rows: rows.map((r) => ({ label: r.name, sub: `${r.leaveDate} → ${r.endDate}${r.reason ? ` — ${r.reason}` : ""}` })) });
+  }
+
+  function showSendsModal(period: PeriodKey, label: string) {
+    const rows: any[] = sends.sendsByRecruiterList?.[period] || [];
+    setListModal({ title: `Sends — ${label} (${rows.length})`, rows: rows.map((r) => ({ label: r.name, sub: `${r.type} — ${r.count} sent` })) });
+  }
 
   return (
     <main className="app-shell wide">
@@ -93,20 +208,55 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       {loadError && <div className="notice error">Growth data failed to load: {loadError}</div>}
       {message && <div className="notice error">{message}</div>}
 
-      <div className="tabs">
-        {["dashboard", "recruiters", "clients", "finance", "tasks", "reports"].map((name) => (
+      {/* Pinned block — always visible above the tabs, matching GAS */}
+      <section className="panel" style={{ background: "#eef0ff", borderColor: "#dfe3ff" }}>
+        <div className="section-head"><h2>Client Status</h2><span className="muted">click a number for the list</span></div>
+        <section className="metric-grid">
+          <StatTile label="On Fire" value={clients.onFire ?? 0} color="#dc2626" onClick={() => showClientBucket("onFire", "On Fire")} />
+          <StatTile label="Smokin" value={clients.smokin ?? 0} color="#ea580c" onClick={() => showClientBucket("smokin", "Smokin")} />
+          <StatTile label="On Track" value={clients.onTrack ?? 0} color="#0891b2" onClick={() => showClientBucket("onTrack", "On Track")} />
+          <StatTile label="Improving" value={clients.improving ?? 0} color="#2563eb" onClick={() => showClientBucket("improving", "Improving")} />
+          <StatTile label="Paused" value={clients.paused ?? 0} color="#b45309" onClick={() => showClientBucket("paused", "Paused")} />
+          <StatTile label="Active Clients" value={clients.activeClients ?? 0} color="#059669" />
+          <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={() => showClientBucket("waitlist", "Wait List (Master Tracker)")} />
+        </section>
+
+        <div className="section-head" style={{ marginTop: 14 }}><h2>Appointments</h2></div>
+        <section className="metric-grid">
+          <StatTile label="Today" value={appts.today ?? 0} />
+          <StatTile label="Yesterday" value={appts.yesterday ?? 0} />
+          <StatTile label="Last 7 Days" value={appts.last7 ?? 0} />
+          <StatTile label="Last 14 Days" value={appts.last14 ?? 0} />
+          <StatTile label="Last 28 Days" value={appts.last28 ?? 0} />
+          <StatTile label="Total Appt So Far" value={appts.total ?? 0} />
+        </section>
+
+        <div className="section-head" style={{ marginTop: 14 }}><h2>All Appointments</h2><span className="muted">master sheet — every appt received</span></div>
+        <PeriodTable
+          title=""
+          rows={[
+            { label: "Received", counts: allAppt.received || {} },
+            { label: "Process", counts: allAppt.process || {} },
+            { label: "Recall", counts: allAppt.recall || {} }
+          ]}
+        />
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          Recall reasons (all-time) — Looking for Job: <strong>{allAppt.recallReasons?.lookingForJob ?? 0}</strong> &nbsp;
+          Vendor: <strong>{allAppt.recallReasons?.vendor ?? 0}</strong> &nbsp;
+          Other: <strong>{allAppt.recallReasons?.other ?? 0}</strong>
+        </div>
+      </section>
+
+      <div className="tabs" style={{ marginTop: 14 }}>
+        <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>dashboard</button>
+        <button className={`tab ${tab === "recruiters" ? "active" : ""}`} onClick={openRecruitersTab}>recruiters</button>
+        {["clients", "finance", "tasks", "reports"].map((name) => (
           <button key={name} className={`tab ${tab === name ? "active" : ""}`} onClick={() => setTab(name as any)}>{name}</button>
         ))}
       </div>
 
       {tab === "dashboard" && (
         <>
-          <section className="metric-grid">
-            <div className="metric"><span>Active Recruiters</span><strong>{data.stats?.activeRecruiters || 0}</strong></div>
-            <div className="metric"><span>Sends Last 7</span><strong>{data.stats?.sendsLast7 || 0}</strong></div>
-            <div className="metric"><span>Appts Last 7</span><strong>{data.stats?.apptsLast7 || 0}</strong></div>
-            <div className="metric"><span>Net</span><strong>${Math.round((data.stats?.totalEarning || 0) - (data.stats?.totalCost || 0))}</strong></div>
-          </section>
           <section className="grid two">
             <div className="panel">
               <div className="section-head"><h2>Recent Feedback</h2><span className="badge">{unreviewedFeedback.length} unreviewed</span></div>
@@ -151,17 +301,147 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "recruiters" && (
-        <section className="panel table-wrap">
-          <h2>Recruiters</h2>
-          <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Type</th><th>Status</th><th>Sheet</th></tr></thead>
-            <tbody>
-              {(data.users || []).filter((u: any) => u.role === "recruiter").map((u: any) => (
-                <tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td>{u.legacy_type}</td><td>{u.status}</td><td>{u.legacy_sheet_id ? "Linked" : "-"}</td></tr>
+        <>
+          <section className="panel">
+            <div className="section-head"><h2>Recruiter Activity</h2></div>
+            <section className="metric-grid">
+              <StatTile label="Active Recruiters" value={recruitersSummary.active ?? 0} sub={`${recruitersSummary.bdInhouseCount ?? 0} BD/Inhouse · ${recruitersSummary.phCount ?? 0} PH`} />
+              <StatTile label="Active Sales Nav" value={recruitersSummary.activeSalesNav ?? 0} />
+            </section>
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>Recruiter Status</h2><span className="muted">from Time Log — click a number for the list</span></div>
+            {!onlineStatus && <div className="muted">Loading...</div>}
+            {onlineStatus && (
+              <section className="metric-grid">
+                <StatTile label="Online Now" value={onlineStatus.online?.length ?? 0} color="#059669" onClick={() => showRecruiterStatusBucket("online", "Online Now")} />
+                <StatTile label="Offline" value={onlineStatus.offline?.length ?? 0} color="#6b7280" onClick={() => showRecruiterStatusBucket("offline", "Offline")} />
+                <StatTile label="Not Started Today" value={onlineStatus.notStarted?.length ?? 0} color="#dc2626" onClick={() => showRecruiterStatusBucket("notStarted", "Not Started Today")} />
+                <StatTile label="Inactive 5+ Days" value={onlineStatus.inactive5d?.length ?? 0} color="#b45309" onClick={() => showRecruiterStatusBucket("inactive5d", "Inactive 5+ Days")} />
+                <StatTile label="On Leave Today" value={leaveToday.length} color="#0891b2" onClick={() => showLeaveModal(leaveToday, "On Leave Today")} />
+                <StatTile label="On Leave Tomorrow" value={leaveTomorrow.length} color="#0891b2" onClick={() => showLeaveModal(leaveTomorrow, "On Leave Tomorrow")} />
+              </section>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>S2A by Type</h2><span className="muted">sends per appointment</span></div>
+            <PeriodTable
+              title=""
+              rows={(["BD/Inhouse", "PH"] as const).map((type) => ({
+                label: type,
+                counts: Object.fromEntries(PERIODS.map((p) => [p.key, s2aByType[type]?.[p.key]?.sendsPerAppt ?? 0])) as Record<PeriodKey, number>
+              }))}
+            />
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>Sends</h2><span className="muted">click a number to see who sent them</span></div>
+            <section className="metric-grid">
+              {PERIODS.map((p) => (
+                <StatTile key={p.key} label={p.label} value={sends[p.key] ?? 0} onClick={() => showSendsModal(p.key, p.label)} />
               ))}
-            </tbody>
-          </table>
-        </section>
+            </section>
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>New Nurture Sent</h2><span className="muted">first nurture message ever sent</span></div>
+            {!nurtureFu && <div className="muted">Loading...</div>}
+            {nurtureFu && (
+              <section className="metric-grid">
+                {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.newNurture?.[p.key] ?? 0} />)}
+              </section>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>FU Sent</h2><span className="muted">FU1+FU2+FU3 combined</span></div>
+            {!nurtureFu && <div className="muted">Loading...</div>}
+            {nurtureFu && (
+              <>
+                <section className="metric-grid">
+                  {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.fuSent?.[p.key] ?? 0} />)}
+                </section>
+                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                  FU1: <strong>{nurtureFu.fuSent?.byStage?.fu1 ?? 0}</strong> · FU2: <strong>{nurtureFu.fuSent?.byStage?.fu2 ?? 0}</strong> · FU3: <strong>{nurtureFu.fuSent?.byStage?.fu3 ?? 0}</strong>
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="actions">
+              <button className="btn btn-outline" onClick={() => setShowTop5((v) => !v)}>🏆 Top 5 by Appointments (14d)</button>
+              <button className="btn btn-outline" onClick={() => setShowNonProd((v) => !v)}>⚠️ Non-Productive Recruiters (14d)</button>
+            </div>
+            {showTop5 && (
+              <div className="compact-list">
+                {(recruitersSummary.top5ByAppts || []).map((r: any, idx: number) => (
+                  <div className="compact-row" key={r.email}><strong>#{idx + 1} {r.name}</strong><span>{r.appts14} appt / {r.sends14} sent — {r.s2a}% S2A</span></div>
+                ))}
+                {(!recruitersSummary.top5ByAppts || recruitersSummary.top5ByAppts.length === 0) && <div className="muted">No data.</div>}
+              </div>
+            )}
+            {showNonProd && (
+              <div className="compact-list">
+                {(recruitersSummary.nonProductive || []).map((r: any) => (
+                  <div className="compact-row" key={r.email}><strong>{r.name}</strong><span className="badge">0 appts</span></div>
+                ))}
+                {(!recruitersSummary.nonProductive || recruitersSummary.nonProductive.length === 0) && <div className="muted">Everyone booked at least 1 appointment.</div>}
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>Daily Appointment by Recruiters</h2>
+            <div className="form-grid admin-create-grid">
+              <label>Start<input type="date" value={s2aRange.startDate} onChange={(e) => setS2aRange({ ...s2aRange, startDate: e.target.value })} /></label>
+              <label>End<input type="date" value={s2aRange.endDate} onChange={(e) => setS2aRange({ ...s2aRange, endDate: e.target.value })} /></label>
+              <button className="btn btn-outline" onClick={() => loadS2ARange(s2aRange.startDate, s2aRange.endDate)}>Apply</button>
+              <button className="btn btn-outline" onClick={() => quickRange(1)}>Today</button>
+              <button className="btn btn-outline" onClick={() => quickRange(2)}>Yesterday+Today</button>
+              <button className="btn btn-outline" onClick={() => quickRange(7)}>Last 7 Days</button>
+              <button className="btn btn-outline" onClick={() => quickRange(14)}>Last 14 Days</button>
+              <button className="btn btn-outline" onClick={() => quickRange(28)}>Last 28 Days</button>
+            </div>
+            {s2aRangeData && (
+              <>
+                <div className="muted" style={{ margin: "8px 0" }}>
+                  Overall S2A — BD/Inhouse: {s2aRangeData.byType?.["BD/Inhouse"]?.s2a ?? 0}% ({s2aRangeData.byType?.["BD/Inhouse"]?.appts ?? 0}/{s2aRangeData.byType?.["BD/Inhouse"]?.sends ?? 0}) ·
+                  {" "}PH: {s2aRangeData.byType?.PH?.s2a ?? 0}% ({s2aRangeData.byType?.PH?.appts ?? 0}/{s2aRangeData.byType?.PH?.sends ?? 0})
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Recruiter</th><th>Type</th><th>Appointments</th><th>Sends</th><th>S2A</th></tr></thead>
+                    <tbody>
+                      {(s2aRangeData.rows || []).slice(0, s2aRangeVisible).map((r: any) => (
+                        <tr key={r.name}><td>{r.name}</td><td>{r.type}</td><td>{r.appts}</td><td>{r.sends}</td><td>{r.s2a}%</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {s2aRangeData.rows && s2aRangeVisible < s2aRangeData.rows.length && (
+                  <button className="btn btn-outline" onClick={() => setS2aRangeVisible((v) => v + 10)}>Load More</button>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-head"><h2>Daily Feedback</h2></div>
+            <div className="compact-list">
+              {unreviewedFeedback.map((f: any) => (
+                <div className="compact-row" key={f.id}>
+                  <strong>{f.name}</strong>
+                  <span>{f.salesnav_all ? "All Sales Nav" : `${f.salesnav_no_count} not working — ${f.salesnav_no_reason}`} | {f.responses_today || 0} responses | {f.comments || f.unusual}</span>
+                  <button className="btn btn-outline" onClick={() => doAction({ action: "markFeedbackReviewed", id: f.id })}>Reviewed</button>
+                </div>
+              ))}
+              {unreviewedFeedback.length === 0 && <div className="muted">Nothing to review.</div>}
+            </div>
+          </section>
+        </>
       )}
 
       {tab === "clients" && (
@@ -252,6 +532,20 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             <div className="count-item"><span>Total Earnings</span><strong>${Math.round(data.stats?.totalEarning || 0)}</strong></div>
           </div>
         </section>
+      )}
+
+      {listModal && (
+        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 30 }} onClick={() => setListModal(null)}>
+          <div className="panel" style={{ maxWidth: 380, maxHeight: "70vh", overflowY: "auto", width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="section-head"><h2>{listModal.title}</h2><button className="btn btn-outline" onClick={() => setListModal(null)}>Close</button></div>
+            <div className="compact-list">
+              {listModal.rows.map((row, idx) => (
+                <div className="compact-row" key={idx}><strong>{row.label}</strong>{row.sub && <span>{row.sub}</span>}</div>
+              ))}
+              {listModal.rows.length === 0 && <div className="muted">Nothing here.</div>}
+            </div>
+          </div>
+        </div>
       )}
 
       <button

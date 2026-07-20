@@ -278,6 +278,14 @@ h3 {
   font-size: 28px;
 }
 
+.metric.clickable {
+  transition: border-color 0.15s ease;
+}
+
+.metric.clickable:hover {
+  border-color: var(--brand, #6c2eb9);
+}
+
 .section-head {
   align-items: center;
   display: flex;

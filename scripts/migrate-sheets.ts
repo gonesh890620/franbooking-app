@@ -52,6 +52,30 @@ function hashRow(row: Row) {
   return crypto.createHash("sha1").update(JSON.stringify(row)).digest("hex");
 }
 
+// Time Log cells can come back as a full timestamp (Last Activity) or a
+// bare time-of-day (Start/End Time) depending on how the sheet cell is
+// formatted. Combine with the row's own Date column when the value has no
+// real date component, matching GAS's own noon-anchored fallback intent.
+function parseTimeLogTimestamp(dateStr: string, raw: unknown): string | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime()) && direct.getFullYear() > 1971) {
+    return direct.toISOString();
+  }
+  const match = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+  if (!match || !dateStr) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const seconds = match[3] ? parseInt(match[3], 10) : 0;
+  const meridiem = match[4]?.toUpperCase();
+  if (meridiem === "PM" && hours < 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+  const combined = new Date(`${dateStr}T00:00:00Z`);
+  combined.setUTCHours(hours, minutes, seconds, 0);
+  return combined.toISOString();
+}
+
 async function rows(spreadsheetId: string, tab: string, range = "A:AZ") {
   const values = await getValues(spreadsheetId, `${quoteSheetName(tab)}!${range}`);
   return values.slice(1);
@@ -385,6 +409,19 @@ async function migrateTemplates(supabase: Supabase) {
   })));
 }
 
+async function migrateWaitList(supabase: Supabase) {
+  const data = await rows(CAMPAIGN_SHEET_ID, "Wait List", "A:E");
+  const records = data.filter((r) => text(r, 1)).map((r, idx) => ({
+    entry_date: date(r, 0),
+    client_name: text(r, 1),
+    contact_email: text(r, 2),
+    eta_launch: text(r, 3),
+    notes: text(r, 4),
+    legacy_row: idx + 2
+  }));
+  await insertMany(supabase, "wait_list", records);
+}
+
 async function migrateLeadsLedger(supabase: Supabase) {
   const users = await userMaps(supabase);
   const clients = await clientMaps(supabase);
@@ -449,6 +486,7 @@ async function migrateAppointments(supabase: Supabase) {
       event_created_at: date(r, 10),
       event_start_at: date(r, 11),
       event_end_at: date(r, 12),
+      responses: text(r, 9),
       identity_check: text(r, 14),
       canceled: text(r, 15),
       cancellation_reason: text(r, 16),
@@ -468,13 +506,22 @@ async function migrateAppointments(supabase: Supabase) {
 async function migrateTimeAndFeedback(supabase: Supabase) {
   const users = await userMaps(supabase);
   const timeRows = await rows(TIME_LOG_ID, "Recruiters", "A:G");
-  await insertMany(supabase, "time_logs", timeRows.filter((r) => text(r, 2)).map((r) => ({
-    user_id: users.byName.get(text(r, 2).toLowerCase()),
-    started_at: `${date(r, 0) || new Date().toISOString().slice(0, 10)}T00:00:00Z`,
-    ended_at: text(r, 4) ? `${date(r, 0) || new Date().toISOString().slice(0, 10)}T00:00:00Z` : null,
-    last_activity_at: new Date().toISOString(),
-    auto_closed: Boolean(text(r, 6))
-  })));
+  await insertMany(supabase, "time_logs", timeRows.filter((r) => text(r, 2)).map((r) => {
+    const rowDate = date(r, 0) || new Date().toISOString().slice(0, 10);
+    const startedAt = parseTimeLogTimestamp(rowDate, r[3]) || `${rowDate}T00:00:00Z`;
+    const endedAt = parseTimeLogTimestamp(rowDate, r[4]);
+    // Last Activity (Col F) drives the Recruiter Status "Inactive 5+ Days"
+    // bucket — falling back to noon on the row's date mirrors GAS's own
+    // fallback so a sheet without this column doesn't look artificially stale.
+    const lastActivityAt = parseTimeLogTimestamp(rowDate, r[5]) || `${rowDate}T12:00:00Z`;
+    return {
+      user_id: users.byName.get(text(r, 2).toLowerCase()),
+      started_at: startedAt,
+      ended_at: endedAt,
+      last_activity_at: lastActivityAt,
+      auto_closed: Boolean(text(r, 6))
+    };
+  }));
 
   const leaveRows = await rows(FEEDBACK_SHEET_ID, "Leave Status", "A:G");
   await insertMany(supabase, "leave_requests", leaveRows.filter((r) => text(r, 1)).map((r) => ({
@@ -628,7 +675,7 @@ async function resetImportedTables(supabase: Supabase) {
     "sales_nav_inventory", "daily_feedback", "leave_requests", "time_logs", "appointments",
     "outreach_logs", "leads_ledger", "unsure_criteria", "templates", "client_dtc_links",
     "campaigns", "recruiter_necessary_things", "recruiter_target_areas", "contacts",
-    "recruiter_client_assignments", "recruiter_credits", "clients", "app_users"
+    "recruiter_client_assignments", "recruiter_credits", "clients", "app_users", "wait_list"
   ];
   if (DRY_RUN) {
     console.log(`would reset: ${tables.join(", ")}`);
@@ -659,6 +706,7 @@ async function main() {
   await migrateDtcLinks(supabase);
   await migrateRecruiterOwnedSheets(supabase);
   await migrateTemplates(supabase);
+  await migrateWaitList(supabase);
   await migrateLeadsLedger(supabase);
   await migrateMasterDb(supabase);
   await migrateAppointments(supabase);

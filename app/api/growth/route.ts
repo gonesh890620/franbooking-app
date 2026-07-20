@@ -6,6 +6,7 @@ import { setSession } from "@/lib/auth";
 import { updateMasterTrackerClientStatus } from "@/lib/masterTracker";
 import { brainstormWithCeo } from "@/lib/ai";
 import { roleForLegacyType } from "@/lib/legacyRecruiter";
+import { getNurtureFuStats, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange } from "@/lib/growthDashboard";
 
 export async function GET() {
   try {
@@ -75,6 +76,31 @@ export async function POST(req: Request) {
     if (action === "markFeedbackReviewed") {
       await supabase.from("daily_feedback").update({ reviewed: true }).eq("id", String(body.id || ""));
       return json({ ok: true });
+    }
+
+    // Recruiter Status tiles/popups — lazy-loaded like GAS's separate
+    // apiCeoGetRecruiterOnlineStatus (kept out of the main dashboard payload
+    // since it's its own query pass, matching GAS's perf-driven split).
+    if (action === "onlineStatus") {
+      return json(await getRecruiterOnlineStatus());
+    }
+    if (action === "leaveToday") {
+      return json({ rows: await getRecruitersOnLeave() });
+    }
+    if (action === "leaveTomorrow") {
+      return json({ rows: await getRecruitersOnLeaveTomorrow() });
+    }
+    // New Nurture Sent / FU Sent — scans every recruiter's own FU Tracker
+    // sheet live, so this is the slowest panel; lazy-loaded on first open.
+    if (action === "nurtureFuStats") {
+      return json(await getNurtureFuStats());
+    }
+    // Daily Appointment by Recruiters — custom date-range table.
+    if (action === "s2aRange") {
+      const start = String(body.startDate || "").slice(0, 10);
+      const end = String(body.endDate || "").slice(0, 10);
+      if (!start || !end) return json({ error: "startDate and endDate are required" }, 400);
+      return json(await getS2AByRecruiterRange(start, end));
     }
 
     // Matches GAS apiCeoListOpsUsers / apiCeoListRecruiters — rosters for the
