@@ -319,11 +319,16 @@ export async function timeLogStart(email: string) {
 export async function timeLogPing(email: string, sessionId: string) {
   const user = await findSupabaseUser(email);
   if (!user || !sessionId) return { error: "Unauthorized" };
-  await (getSupabaseAdmin() as any).from("time_logs")
+  const { data } = await (getSupabaseAdmin() as any).from("time_logs")
     .update({ last_activity_at: new Date().toISOString() })
     .eq("id", sessionId)
     .eq("user_id", user.id)
-    .is("ended_at", null);
+    .is("ended_at", null)
+    .select("id");
+  // No row matched (ended_at already set) — the session was closed
+  // server-side (auto-close swept it, etc.). Signal the caller so it stops
+  // pinging a dead row instead of doing so forever.
+  if (!data || !data.length) return { ok: true, alreadyClosed: true };
   return { ok: true };
 }
 
