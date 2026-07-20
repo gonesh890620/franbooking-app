@@ -59,6 +59,97 @@ async function findSupabaseUser(email: string): Promise<{ id: string; email: str
   }
 }
 
+async function findOrCreateSupabaseClient(name: string): Promise<string | null> {
+  const cleaned = cleanClientName(name);
+  if (!cleaned) return null;
+  try {
+    const supabase = getSupabaseAdmin() as any;
+    const { data: existing } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("name", cleaned)
+      .maybeSingle();
+    const existingClient = existing as { id?: string } | null;
+    if (existingClient?.id) return existingClient.id;
+
+    const { data: inserted } = await supabase
+      .from("clients")
+      .insert({ name: cleaned })
+      .select("id")
+      .single();
+    const insertedClient = inserted as { id?: string } | null;
+    return insertedClient?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+// Primary write target for FU Tracker actions (Outreach/Nurture save, status
+// changes, CA/NY flag) — Supabase is written FIRST so the recruiter never
+// waits on the Sheets API, then the recruiter's own FU Tracker sheet is
+// updated second, best-effort. recruiter_name/email are stored directly on
+// the row so Growth/Ops can identify the owner without a join.
+async function upsertSupabaseContact(email: string, data: {
+  name?: string;
+  li: string;
+  clientName?: string;
+  status?: string;
+  nextAction?: string;
+  conversation?: string;
+  reply?: string;
+  source?: string;
+  salesNavId?: string;
+  code?: string;
+  tag?: string;
+  cany?: boolean;
+  outreachType?: string;
+  legacyRow?: number;
+  lastNurtureType?: string;
+  dateJ?: string;
+  dateK?: string;
+  dateL?: string;
+  dateM?: string;
+}) {
+  const user = await findSupabaseUser(email);
+  const normalized = normalizeLi(data.li);
+  if (!user || !normalized) return;
+
+  const clientId = await findOrCreateSupabaseClient(data.clientName || "");
+  try {
+    await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .upsert({
+        recruiter_id: user.id,
+        recruiter_name: user.name,
+        recruiter_email: user.email,
+        name: data.name || "",
+        linkedin_url: data.li,
+        normalized_linkedin_url: normalized,
+        client_id: clientId,
+        status: data.status || "",
+        next_action: data.nextAction || "",
+        conversation: data.conversation || "",
+        reply: data.reply || "",
+        date_j: data.dateJ || null,
+        date_k: data.dateK || null,
+        date_l: data.dateL || null,
+        date_m: data.dateM || null,
+        source: data.source || "",
+        sales_nav_id: data.salesNavId || "",
+        code: data.code || "",
+        tag: data.tag || "",
+        cany: Boolean(data.cany),
+        outreach_type: data.outreachType || "",
+        legacy_row: data.legacyRow || null,
+        last_nurture_type: data.lastNurtureType || "",
+        last_synced_to_sheet_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: "recruiter_id,normalized_linkedin_url" });
+  } catch (e) {
+    console.error("upsertSupabaseContact failed:", e);
+  }
+}
+
 async function insertSupabaseOutreach(email: string, data: {
   name: string;
   li: string;
@@ -408,9 +499,99 @@ function deriveTaskFromRow(row: SheetRow, rowNumber: number, today: string): { t
   return result;
 }
 
-export async function getDailyTasks(email: string) {
+function deriveTaskFromContact(row: any, today: string): { todayTask?: DailyTask; reviewTask?: DailyTask } {
+  const name = String(row.name || "").trim();
+  const li = String(row.linkedin_url || "").trim();
+  if (!name && !li) return {};
+  const status = String(row.reply || row.status || "").trim();
+  const sl = status.toLowerCase();
+  if (["booked", "closed", "not interested", "recalled", "done", "profile restricted"].includes(sl)) return {};
+
+  const addDays = (date: string, days: number) => {
+    if (!date) return "";
+    const d = new Date(`${date}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const due = (date: string) => Boolean(date && date <= today);
+  const dJ = normalizeDateCell(row.date_j);
+  const dK = normalizeDateCell(row.date_k);
+  const dL = normalizeDateCell(row.date_l);
+  const dM = normalizeDateCell(row.date_m);
+
+  let isDue = false;
+  let stage = "";
+  let nurtureType = "";
+  if (sl === "interested") {
+    isDue = due(dJ);
+    stage = "SDFU Due";
+    nurtureType = "SDFU";
+  } else if (sl === "sdfu sent" || sl === "unsure" || sl === "unsure srfu") {
+    isDue = due(addDays(dJ, 1));
+    stage = "FU1 Due";
+    nurtureType = "FU1";
+  } else if (sl.includes("fu1") || sl === "int fu1 sent") {
+    isDue = due(addDays(dK || dJ, 1));
+    stage = "FU2 Due";
+    nurtureType = "FU2";
+  } else if (sl.includes("fu2") || sl === "int fu2 sent") {
+    isDue = due(addDays(dL || dK, 1));
+    stage = "FU3 Due";
+    nurtureType = "FU3";
+  } else if (sl === "dm-sn expire") {
+    isDue = due(addDays(dL, 1));
+    stage = "FU3 Due";
+    nurtureType = "FU3";
+  }
+
+  const base = {
+    name,
+    li,
+    client: cleanClientName(row.clients?.name || ""),
+    row: Number(row.legacy_row || 0),
+    status,
+    notes: String(row.sales_nav_id || row.code || "").trim(),
+    canyFlag: row.cany ? "Yes" : ""
+  };
+
+  const result: { todayTask?: DailyTask; reviewTask?: DailyTask } = {};
+  if (isDue && stage !== "Review Due") result.todayTask = { ...base, stage, nurtureType };
+  if (sl.includes("fu3")) {
+    const anchor = dM || dL;
+    const daysWaiting = anchor ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`)) / 86400000) : null;
+    result.reviewTask = { ...base, stage: "Review Due", nurtureType: "", daysWaiting };
+  }
+  return result;
+}
+
+async function getSupabaseDailyTasks(email: string) {
+  const user = await findSupabaseUser(email);
+  if (!user) return null;
+  try {
+    const { data, error } = await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("name,linkedin_url,status,reply,date_j,date_k,date_l,date_m,sales_nav_id,code,cany,legacy_row,clients(name)")
+      .eq("recruiter_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(5000);
+    if (error || !data) return null;
+    const today = todayIso();
+    const tasks: DailyTask[] = [];
+    const reviewTasks: DailyTask[] = [];
+    data.forEach((row: any) => {
+      const parsed = deriveTaskFromContact(row, today);
+      if (parsed.todayTask) tasks.push(parsed.todayTask);
+      if (parsed.reviewTask) reviewTasks.push(parsed.reviewTask);
+    });
+    return { tasks, reviewTasks };
+  } catch {
+    return null;
+  }
+}
+
+async function getSheetDailyTasks(email: string) {
   const sheet = await getFuSheet(email);
-  if (!sheet) return { tasks: [], reviewTasks: [] };
+  if (!sheet) return { tasks: [] as DailyTask[], reviewTasks: [] as DailyTask[] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
   const today = todayIso();
   const tasks: DailyTask[] = [];
@@ -420,15 +601,51 @@ export async function getDailyTasks(email: string) {
     if (parsed.todayTask) tasks.push(parsed.todayTask);
     if (parsed.reviewTask) reviewTasks.push(parsed.reviewTask);
   }
+  return { tasks, reviewTasks };
+}
+
+// FU Tracker (Outreach/Nurture pipeline) reads Supabase first — recruiter
+// actions write there immediately, so it's the fresher source — falling
+// back to the recruiter's own Sheet only if Supabase has nothing yet (e.g.
+// brand new recruiter). Daily Assignment (client list/paused status) stays
+// Sheets-only per the agreed data architecture, so the paused-flag lookup
+// below is unaffected by this switch.
+export async function getDailyTasks(email: string) {
+  const result = (await getSupabaseDailyTasks(email)) || (await getSheetDailyTasks(email));
   const clients: ClientAssignment[] = (await getClients(email)).clients || [];
   const paused = new Set(clients.filter((c) => /paused/i.test(c.status)).map((c) => c.name));
-  tasks.forEach((t) => (t.paused = paused.has(t.client)));
-  reviewTasks.forEach((t) => (t.paused = paused.has(t.client)));
-  reviewTasks.sort((a, b) => (b.daysWaiting ?? -1) - (a.daysWaiting ?? -1));
-  return { tasks, reviewTasks, canyMax: CONFIG.canyMax };
+  result.tasks.forEach((t) => (t.paused = paused.has(t.client)));
+  result.reviewTasks.forEach((t) => (t.paused = paused.has(t.client)));
+  result.reviewTasks.sort((a, b) => (b.daysWaiting ?? -1) - (a.daysWaiting ?? -1));
+  return { tasks: result.tasks, reviewTasks: result.reviewTasks, canyMax: CONFIG.canyMax };
 }
 
 export async function getContacts(email: string, q: string) {
+  const supabaseUser = await findSupabaseUser(email);
+  if (supabaseUser) {
+    let query = (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("name,linkedin_url,status,legacy_row,cany,clients(name)")
+      .eq("recruiter_id", supabaseUser.id)
+      .order("updated_at", { ascending: false })
+      .limit(80);
+    const search = String(q || "").toLowerCase().trim();
+    if (search) query = query.or(`name.ilike.%${search}%,linkedin_url.ilike.%${search}%`);
+    const { data } = await query;
+    if (data && data.length) {
+      return {
+        contacts: data.map((row: any) => ({
+          name: String(row.name || "").trim(),
+          li: String(row.linkedin_url || "").trim(),
+          status: String(row.status || "").trim(),
+          client: cleanClientName(row.clients?.name || ""),
+          canyFlag: row.cany ? "Yes" : "",
+          row: Number(row.legacy_row || 0)
+        }))
+      };
+    }
+  }
+
   const sheet = await getFuSheet(email);
   if (!sheet) return { contacts: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -455,6 +672,25 @@ export async function getContacts(email: string, q: string) {
 export async function checkLiDuplicate(email: string, li: string) {
   const normalized = normalizeLi(li);
   if (!normalized) return { duplicate: false, matches: [] };
+
+  // Supabase-primary, org-wide (not scoped to this recruiter) — this is the
+  // live, immediately-fresh source since Outreach/Nurture saves write here
+  // first. Falls back to the Sheets-based Master DB scan only if Supabase
+  // has no match (e.g. before the first Supabase-era save for this contact).
+  const { data: supabaseMatches } = await (getSupabaseAdmin() as any)
+    .from("contacts")
+    .select("name,status,linkedin_url,clients(name)")
+    .eq("normalized_linkedin_url", normalized)
+    .limit(5);
+  if (supabaseMatches && supabaseMatches.length) {
+    const matches = supabaseMatches.map((row: any) => ({
+      name: row.name || "",
+      status: row.status || "",
+      li: row.linkedin_url || "",
+      client: cleanClientName(row.clients?.name || "")
+    }));
+    return { duplicate: true, matches };
+  }
 
   const matches: Array<{ name: string; status: string; li: string; recruiter?: string }> = [];
   const outreachTitle = await findSheetTitleExact(CONFIG.masterDbId, ["LI Outreach", "Outreach"]);
@@ -573,10 +809,32 @@ export async function getNurtureTemplate(email: string, nurtureType: string, cli
   return { ...tpl, body, text: body };
 }
 
-// All-time per-client contact counts from the recruiter's own FU Tracker,
-// excluding dead leads (Not Interested / Profile Restricted) — mirrors GAS
-// apiGetClientRatio's "allCounts" pass.
+// All-time per-client contact counts, excluding dead leads (Not Interested /
+// Profile Restricted) — mirrors GAS apiGetClientRatio's "allCounts" pass.
+// Supabase-primary (FU Tracker contact data), falling back to a direct Sheet
+// scan only if this recruiter has no Supabase contacts yet.
 export async function getClientRatio(email: string) {
+  const user = await findSupabaseUser(email);
+  if (user) {
+    const { data: contacts } = await (getSupabaseAdmin() as any)
+      .from("contacts")
+      .select("status,clients(name)")
+      .eq("recruiter_id", user.id);
+    if (contacts && contacts.length) {
+      const totals = new Map<string, number>();
+      contacts.forEach((row: any) => {
+        const status = String(row.status || "").trim().toLowerCase();
+        if (status === "not interested" || status === "profile restricted") return;
+        const client = cleanClientName(row.clients?.name || "");
+        if (!client) return;
+        totals.set(client, (totals.get(client) || 0) + 1);
+      });
+      const entries = Array.from(totals.entries()).map(([client, count]) => ({ client, count }));
+      const max = Math.max(1, ...entries.map((row) => row.count));
+      return { rows: entries.map((row) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
+    }
+  }
+
   const sheet = await getFuSheet(email);
   if (!sheet) return { rows: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
@@ -594,12 +852,29 @@ export async function getClientRatio(email: string) {
 }
 
 export async function bulkSetCany(email: string, lis: string[]) {
+  const user = await findSupabaseUser(email);
+  const normalized = lis.map(normalizeLi).filter(Boolean);
+  if (user && normalized.length) {
+    try {
+      await (getSupabaseAdmin() as any)
+        .from("contacts")
+        .update({ cany: true, updated_at: new Date().toISOString() })
+        .eq("recruiter_id", user.id)
+        .in("normalized_linkedin_url", normalized);
+    } catch (e) {
+      console.error("bulkSetCany Supabase write failed:", e);
+    }
+  }
   let updated = 0;
   for (const li of lis) {
     const found = await findFuRowByLi(email, li);
     if (!found) continue;
-    await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!R${found.rowNumber}:R${found.rowNumber}`, [["Yes"]]);
-    updated++;
+    try {
+      await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!R${found.rowNumber}:R${found.rowNumber}`, [["Yes"]]);
+      updated++;
+    } catch (e) {
+      console.error("bulkSetCany sheet write failed:", e);
+    }
   }
   return { ok: true, updated };
 }
@@ -742,15 +1017,54 @@ export async function saveNurture(email: string, li: string, reply: string, nurt
   if (clientName && nurtureType !== "Not Interested") row[FU.CLIENT] = cleanClientName(clientName);
   if (!row[FU.DATE_J] && ["Interested", "INT", "Unsure", "Client Rotation", "CA/NY Territory Change", "Not Interested"].includes(nurtureType)) row[FU.DATE_J] = today;
   if (!row[FU.DATE_L] && nurtureType === "SalesNavRemove") row[FU.DATE_L] = today;
-  const range = `${quoteSheetName(found.title)}!A${found.rowNumber}:Q${found.rowNumber}`;
-  await updateValues(found.spreadsheetId, range, [row.slice(0, 17)]);
+
+  // Supabase first (primary, fast) — the recruiter's save succeeds and
+  // returns as soon as this lands, the Sheet write below is best-effort.
+  await upsertSupabaseContact(email, {
+    name: String(row[FU.NAME] || ""),
+    li,
+    clientName: cleanClientName(clientName || String(row[FU.CLIENT] || "")),
+    status: newStatus,
+    nextAction: String(row[FU.NEXT_ACTION] || ""),
+    conversation,
+    reply,
+    source: String(row[FU.SOURCE] || source || ""),
+    salesNavId: String(row[FU.SALES_NAV] || ""),
+    code: String(row[FU.CODE] || ""),
+    tag: String(row[FU.TAG] || ""),
+    cany: String(row[FU.CANY] || "").toLowerCase() === "yes",
+    legacyRow: found.rowNumber,
+    lastNurtureType: nurtureType,
+    dateJ: normalizeDateCell(row[FU.DATE_J]),
+    dateK: normalizeDateCell(row[FU.DATE_K]),
+    dateL: normalizeDateCell(row[FU.DATE_L]),
+    dateM: normalizeDateCell(row[FU.DATE_M])
+  });
+  try {
+    const range = `${quoteSheetName(found.title)}!A${found.rowNumber}:Q${found.rowNumber}`;
+    await updateValues(found.spreadsheetId, range, [row.slice(0, 17)]);
+  } catch (e) {
+    console.error("saveNurture sheet write failed:", e);
+  }
   return { ok: true, newStatus };
 }
 
 export async function markStatus(email: string, li: string, status: string, nextAction: string) {
   const found = await findFuRowByLi(email, li);
   if (!found) return { error: "Contact not found." };
-  await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!F${found.rowNumber}:G${found.rowNumber}`, [[status, nextAction]]);
+  await upsertSupabaseContact(email, {
+    name: String(found.row[FU.NAME] || ""),
+    li,
+    clientName: cleanClientName(String(found.row[FU.CLIENT] || "")),
+    status,
+    nextAction,
+    legacyRow: found.rowNumber
+  });
+  try {
+    await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!F${found.rowNumber}:G${found.rowNumber}`, [[status, nextAction]]);
+  } catch (e) {
+    console.error("markStatus sheet write failed:", e);
+  }
   return { ok: true };
 }
 
@@ -780,28 +1094,22 @@ export async function saveOutreach(email: string, data: {
   const found = await findFuRowByLi(email, data.li);
   const today = todayIso();
   const sourceLabel = data.outType === "DM" ? "DM" : data.outType === "Invite" ? "Invite" : "InMail";
-  if (found) {
-    const row = [...found.row];
-    row[FU.STATUS] = "Awaiting Response";
-    row[FU.SOURCE] = sourceLabel;
-    row[FU.SALES_NAV] = data.salesNavId || "";
-    row[FU.CODE] = data.subject || data.code || "";
-    if (data.isCany) row[FU.CANY] = "Yes";
-    await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!A${found.rowNumber}:R${found.rowNumber}`, [row.slice(0, 18)]);
-  } else {
-    const newRow = Array(18).fill("");
-    newRow[FU.DATE] = today;
-    newRow[FU.NAME] = data.name;
-    newRow[FU.LI] = data.li;
-    newRow[FU.STATUS] = "Awaiting Response";
-    newRow[FU.SOURCE] = sourceLabel;
-    newRow[FU.SALES_NAV] = data.salesNavId || "";
-    newRow[FU.CODE] = data.subject || data.code || "";
-    if (data.isCany) newRow[FU.CANY] = "Yes";
-    await appendValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A:R`, [newRow]);
-  }
-  const rec = await findRecruiter(email);
-  await appendValues(CONFIG.masterDbId, "'Sheet1'!A:G", [[today, data.name, data.li, "", "", "", rec?.name || email]]);
+
+  // Supabase first (primary, fast): the FU Tracker contact record and the
+  // Master LI outreach log both go to Supabase only — the old
+  // MASTER_DB_ID sheet append is gone, outreach_logs is now the sole
+  // "Master LI database" per the agreed data architecture.
+  await upsertSupabaseContact(email, {
+    name: data.name,
+    li: data.li,
+    status: "Awaiting Response",
+    source: sourceLabel,
+    salesNavId: data.salesNavId || "",
+    code: data.subject || data.code || "",
+    cany: Boolean(data.isCany),
+    outreachType: data.outType,
+    legacyRow: found?.rowNumber
+  });
   await insertSupabaseOutreach(email, {
     name: data.name,
     li: data.li,
@@ -809,6 +1117,32 @@ export async function saveOutreach(email: string, data: {
     subject: data.subject || data.code || "",
     message: data.content
   });
+
+  // Recruiter's own FU Tracker sheet, second and best-effort.
+  try {
+    if (found) {
+      const row = [...found.row];
+      row[FU.STATUS] = "Awaiting Response";
+      row[FU.SOURCE] = sourceLabel;
+      row[FU.SALES_NAV] = data.salesNavId || "";
+      row[FU.CODE] = data.subject || data.code || "";
+      if (data.isCany) row[FU.CANY] = "Yes";
+      await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!A${found.rowNumber}:R${found.rowNumber}`, [row.slice(0, 18)]);
+    } else {
+      const newRow = Array(18).fill("");
+      newRow[FU.DATE] = today;
+      newRow[FU.NAME] = data.name;
+      newRow[FU.LI] = data.li;
+      newRow[FU.STATUS] = "Awaiting Response";
+      newRow[FU.SOURCE] = sourceLabel;
+      newRow[FU.SALES_NAV] = data.salesNavId || "";
+      newRow[FU.CODE] = data.subject || data.code || "";
+      if (data.isCany) newRow[FU.CANY] = "Yes";
+      await appendValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A:R`, [newRow]);
+    }
+  } catch (e) {
+    console.error("saveOutreach sheet write failed:", e);
+  }
   return { ok: true };
 }
 
