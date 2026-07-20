@@ -46,7 +46,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-export default function RecruiterDashboard({ initialUser }: { initialUser: { email: string; name: string } | null }) {
+type RecruiterUser = { email: string; name: string; impersonatorEmail?: string; impersonatorName?: string };
+
+export default function RecruiterDashboard({ initialUser }: { initialUser: RecruiterUser | null }) {
   const [user, setUser] = useState(initialUser);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -147,6 +149,11 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
     await api("/api/auth/logout", { method: "POST" });
     setUser(null);
     setBoot({});
+  }
+
+  async function returnToGrowth() {
+    const result = await api<{ page: string }>("/api/auth/return-impersonation", { method: "POST" });
+    window.location.href = result.page || "/growth";
   }
 
   async function tool<T>(action: string, params: Record<string, string> = {}) {
@@ -372,6 +379,12 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
           <button className="btn btn-outline" onClick={logout}>Logout</button>
         </div>
       </div>
+
+      {user.impersonatorEmail && (
+        <div className="notice warn">
+          Viewing as {user.name} — <button className="btn btn-outline" onClick={returnToGrowth}>Return to Growth</button>
+        </div>
+      )}
 
       <div className="credit-row">
         <span className="credit-pill">{boot.usage?.nurtureBalance ?? "-"} Nurture</span>

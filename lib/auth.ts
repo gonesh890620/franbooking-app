@@ -6,6 +6,8 @@ export type SessionUser = {
   email: string;
   name: string;
   type: string;
+  impersonatorEmail?: string;
+  impersonatorName?: string;
 };
 
 const COOKIE_NAME = "fb_session";
@@ -26,7 +28,13 @@ export function readSessionToken(token?: string): SessionUser | null {
   try {
     const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!decoded.email || !decoded.name) return null;
-    return { email: decoded.email, name: decoded.name, type: decoded.type || "PH" };
+    return {
+      email: decoded.email,
+      name: decoded.name,
+      type: decoded.type || "PH",
+      impersonatorEmail: decoded.impersonatorEmail || undefined,
+      impersonatorName: decoded.impersonatorName || undefined
+    };
   } catch {
     return null;
   }

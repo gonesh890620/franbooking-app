@@ -236,6 +236,16 @@ Phase 1 (data-architecture correctness) is done:
 - Appointment Recall now requires a typed reason (prompt), matching GAS/Phase 1's `recallAppointment` requirement.
 - `npm run build` passes. **Not yet manually verified** — needs a real Ops session with populated `sales_nav_inventory`/`applicants` data and at least one recruiter with a real FU Tracker sheet to test search against.
 
+## Phase 5 — Growth parity (done this session, partial)
+
+- **Client Tracker can now write**, not just read: `updateClientStatus` added to `app/api/growth/route.ts`, reusing the same dual-write (Supabase `campaigns` + Master Tracker sheet) built in Phase 1/4 for Operations.
+- **Feedback "mark reviewed"**: dashboard now only shows unreviewed feedback with a Reviewed button (`daily_feedback.reviewed`, matching GAS `apiCeoMarkFeedbackReviewed`).
+- **CEO Brainstorm AI**: floating chat FAB + panel, `lib/ai.ts` `brainstormWithCeo` + `brainstorm` action in the growth route. Simplified vs. GAS: only the free-form chat mode was ported, not the "report" mode that pulls an exhaustive per-recruiter 14-day S2A/Top-5/Non-Productive/All-Appt snapshot — this port's Growth payload doesn't compute that breakdown yet (see "still missing" below), so the chat is grounded in the simpler stats already on the dashboard instead.
+- **Impersonation**: "Operations Panel →" / "Recruiter Panel →" buttons open a picker (`listOpsUsers`/`listRecruiters` actions), then `impersonate` swaps the session to that user while stashing the Growth identity (`SessionUser.impersonatorEmail/Name`, new fields in `lib/auth.ts`). Both `RecruiterDashboard.tsx` and `OperationsConsole.tsx` show a "Viewing as X — Return to Growth" banner (new `/api/auth/return-impersonation` route) when impersonating. Note: this app's session is a signed cookie, not GAS's `sessionStorage` — same end-user behavior, different mechanism.
+- **Team task reassignment**: `reassignTask` action + a Reassign button (prompts for email/name) on each task.
+- **Fixed the stale "Sends Last 7 Days" stat** flagged in the Phase 1 handoff notes: `lib/growthData.ts` now counts from `outreach_logs` (still live-written, Supabase-only per the architecture) instead of the now-Sheets-only `contacts` table, which had gone stale after Phase 1.
+- **Not done — still missing, larger lower-priority items:** recruiter oversight breakdowns (S2A by type, online status, leave lists, directory/billing reports), full Reports section, appointment review/recall directly inside Growth (Operations already has it), drilldown popups (client detail, recruiter detail), recurring tasks, Vendor Management section, and GAS's `apiCeoAddClient`/`apiCeoUpdateClient`/`apiCeoArchiveClient`/`apiCeoMarkLedgerSent` (net-new 4-sheet client onboarding flow, deferred from Phase 1 — still not built).
+- `npm run build` passes. **Not yet manually verified** — needs a real Growth session to test Brainstorm, impersonation round-trip, and feedback review.
+
 ## Roadmap (not started yet — check in before each)
-- **Phase 5 — Growth parity:** the add/update/archive-client + mark-ledger-sent actions noted above, recruiter oversight breakdowns, reports, feedback "mark reviewed" + appointment review/recall in Growth, CEO Brainstorm AI, impersonation, drilldown popups, team task reassignment/recurring tasks, Vendor Management.
 - **Phase 6 — Agent/Client polish:** Agent's full 6-step bilingual onboarding with gated Call Outcome select; Client's cycle/date-range filters, feedback/recall tags, charts.

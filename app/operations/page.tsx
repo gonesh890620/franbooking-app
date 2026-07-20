@@ -11,5 +11,10 @@ export default async function OperationsPage() {
   }
 
   const initial = await getOperationsPayload();
-  return <OperationsConsole session={session!} initial={initial} />;
+  return (
+    <OperationsConsole
+      session={{ name: session!.name, email: session!.email, impersonatorEmail: session!.impersonatorEmail, impersonatorName: session!.impersonatorName }}
+      initial={initial}
+    />
+  );
 }

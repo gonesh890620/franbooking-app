@@ -16,7 +16,9 @@ type ContactSearchResult = {
   source: string;
 };
 
-export default function OperationsConsole({ session, initial }: { session: { name: string; email: string }; initial: any }) {
+type OperationsSession = { name: string; email: string; impersonatorEmail?: string; impersonatorName?: string };
+
+export default function OperationsConsole({ session, initial }: { session: OperationsSession; initial: any }) {
   const [data, setData] = useState(initial);
   const [tab, setTab] = useState<"appointments" | "salesnav" | "pipeline" | "clients">("appointments");
   const [message, setMessage] = useState("");
@@ -32,6 +34,12 @@ export default function OperationsConsole({ session, initial }: { session: { nam
   async function reload() {
     const res = await fetch("/api/operations");
     setData(await res.json());
+  }
+
+  async function returnToGrowth() {
+    const res = await fetch("/api/auth/return-impersonation", { method: "POST" });
+    const payload = await res.json();
+    window.location.href = payload.page || "/growth";
   }
 
   async function action(body: Record<string, unknown>) {
@@ -86,6 +94,11 @@ export default function OperationsConsole({ session, initial }: { session: { nam
         </div>
         <button className="btn btn-outline" onClick={reload}>Refresh</button>
       </div>
+      {session.impersonatorEmail && (
+        <div className="notice warn">
+          Viewing as {session.name} — <button className="btn btn-outline" onClick={returnToGrowth}>Return to Growth</button>
+        </div>
+      )}
       {message && <div className="notice success">{message}</div>}
       <section className="metric-grid">
         <div className="metric"><span>Pending Appts</span><strong>{pending.length}</strong></div>

@@ -117,6 +117,30 @@ export async function generateNurtureCopy(prospectName: string, nurtureType: str
   return callAnthropic(prompt, "claude-sonnet-5", 220);
 }
 
+export async function brainstormWithCeo(question: string, history: Array<{ role: string; text: string }>, dataSnapshot: string) {
+  const convo = (Array.isArray(history) ? history.slice(-12) : [])
+    .map((turn) => {
+      const role = turn?.role === "assistant" ? "Assistant" : "You (the CEO)";
+      const text = String(turn?.text || "").trim();
+      return text ? `${role}: ${text}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  let prompt =
+    "You are a sharp, candid business/strategy thinking partner for the CEO of a franchise-recruiting company " +
+    "(they book appointments between prospective franchise buyers and franchise brands, using a recruiter team, " +
+    "Sales Navigator outreach, and a nurture/follow-up pipeline).\n" +
+    "Have a natural back-and-forth conversation. Be direct and substantive, give real opinions and concrete " +
+    "suggestions rather than generic business platitudes, ask a clarifying question if the request is ambiguous, " +
+    "and keep answers reasonably concise (a few short paragraphs or a tight list) unless the question calls for more depth.\n\n";
+  if (dataSnapshot) prompt += `REAL DATA (use only this, never invent numbers):\n${dataSnapshot}\n\n`;
+  if (convo) prompt += `Conversation so far:\n${convo}\n`;
+  prompt += `You (the CEO): ${question}\nAssistant:`;
+
+  return callAnthropic(prompt, "claude-sonnet-5", 900);
+}
+
 export async function rewriteNurtureCopy(prospectName: string, draft: string, clientName: string) {
   const firstName = substituteFirstName("{{FirstName}}", prospectName);
   let prompt =
