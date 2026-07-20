@@ -1,8 +1,8 @@
 import RoleGate from "@/components/RoleGate";
-import WorkspaceDashboard from "@/components/WorkspaceDashboard";
+import AgentConsole from "@/components/AgentConsole";
 import { getSession } from "@/lib/auth";
-import { getRecentApplicants, getTableCounts } from "@/lib/dashboardData";
 import { canOpenRole } from "@/lib/roles";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export default async function AgentPage() {
   const session = getSession();
@@ -10,15 +10,9 @@ export default async function AgentPage() {
     return <RoleGate session={session} role="agent" title="Agent" />;
   }
 
-  const [counts, applicants] = await Promise.all([getTableCounts(), getRecentApplicants(12)]);
-
-  return (
-    <WorkspaceDashboard
-      title="Agent Panel"
-      session={session!}
-      counts={counts.filter((item) => ["applicants", "agent_logs", "team_tasks", "time_logs"].includes(item.table))}
-      rows={applicants}
-      rowTitle="Applicant Pipeline"
-    />
-  );
+  const supabase = getSupabaseAdmin() as any;
+  const { data: applicants } = await supabase.from("applicants").select("*").eq("assigned_agent_name", session!.name).order("updated_at", { ascending: false, nullsFirst: false });
+  const ids = (applicants || []).map((a: any) => a.id);
+  const { data: logs } = ids.length ? await supabase.from("agent_logs").select("*").in("applicant_id", ids) : { data: [] };
+  return <AgentConsole session={session!} initial={{ applicants: applicants || [], logs: logs || [] }} />;
 }
