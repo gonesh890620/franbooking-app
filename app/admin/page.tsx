@@ -2,11 +2,11 @@ import AdminConsole from "@/components/AdminConsole";
 import AdminLogin from "@/components/AdminLogin";
 import { getSession } from "@/lib/auth";
 import { getAdminUsers, getTableCounts } from "@/lib/dashboardData";
-import { isAdminUser } from "@/lib/roles";
+import { isSuperAdmin } from "@/lib/roles";
 
 export default async function AdminPage() {
   const session = getSession();
-  if (!isAdminUser(session)) {
+  if (!isSuperAdmin(session)) {
     return <AdminLogin />;
   }
 

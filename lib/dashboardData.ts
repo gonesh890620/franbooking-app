@@ -39,7 +39,7 @@ export async function getAdminUsers() {
   const supabase = getSupabaseAdmin();
   const { data: users, error: usersError } = await supabase
     .from("app_users")
-    .select("id,email,name,role,legacy_type,legacy_sheet_id,status,updated_at")
+    .select("id,email,name,role,legacy_type,legacy_sheet_id,status,updated_at,approved_at,expires_at,referred_by,remove_date,remove_reason")
     .order("role", { ascending: true })
     .order("name", { ascending: true });
   if (usersError) throw new Error(`app_users: ${usersError.message}`);

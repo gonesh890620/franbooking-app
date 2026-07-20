@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -12,18 +12,14 @@ export default function AdminLogin() {
     setLoading(true);
     setMessage("");
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/auth/admin-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ username, password })
       });
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || data.status || "Login failed");
-      if (!["growth", "admin"].includes(String(data.role || "").toLowerCase())) {
-        await fetch("/api/auth/logout", { method: "POST" });
-        throw new Error("This account does not have Admin access.");
-      }
-      window.location.href = "/admin";
+      if (!res.ok || data.error) throw new Error(data.error || "Login failed");
+      window.location.href = data.page || "/admin";
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Admin login failed");
     } finally {
@@ -36,9 +32,9 @@ export default function AdminLogin() {
       <section className="login-card">
         <div className="brand">Franbooking</div>
         <h1>Admin Login</h1>
-        <p>Use an approved Growth or Admin account.</p>
+        <p>This is the shared Admin account used for user management only.</p>
         <div className="form-grid">
-          <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+          <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label>
           <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
           <button className="btn btn-primary" disabled={loading} onClick={login}>Login</button>
         </div>

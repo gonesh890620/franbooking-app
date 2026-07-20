@@ -169,11 +169,20 @@ async function loginSupabaseUser(email: string, password: string) {
   try {
     const { data: rec } = await (getSupabaseAdmin() as any)
       .from("app_users")
-      .select("email,name,status,role,legacy_type,password_hash,legacy_sheet_id")
+      .select("email,name,status,role,legacy_type,password_hash,legacy_sheet_id,expires_at")
       .eq("email", String(email || "").toLowerCase().trim())
       .maybeSingle();
     if (!rec) return null;
-    const status = String(rec.status || "").toLowerCase();
+    let status = String(rec.status || "").toLowerCase();
+    // Access-window expiry — auto-flip to 'expired' on login, matching GAS
+    // apiLogin, rather than requiring an admin to notice and remove access.
+    if (status === "approved" && rec.expires_at) {
+      const expDate = new Date(`${rec.expires_at}T00:00:00Z`);
+      if (!Number.isNaN(expDate.getTime()) && expDate.getTime() < Date.now()) {
+        status = "expired";
+        await (getSupabaseAdmin() as any).from("app_users").update({ status: "expired" }).eq("email", rec.email);
+      }
+    }
     if (status !== "approved") return { ok: false, status };
     const storedPassword = String(rec.password_hash || "").trim();
     if (storedPassword && storedPassword !== String(password || "").trim()) {
