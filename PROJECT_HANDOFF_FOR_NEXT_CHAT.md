@@ -227,7 +227,15 @@ Phase 1 (data-architecture correctness) is done:
 - **Not done / deliberately skipped:** the LI Screening reference card (static reference text/checklist from the extension) — purely informational, no functional impact, lowest priority of the Phase 3 list. Can be added later if wanted.
 - `npm run build` passes. **Not yet manually verified** — needs `ANTHROPIC_API_KEY` set in Vercel and a real recruiter session to test AI Generate/Rewrite, Rotation, and the Time Log heartbeat end-to-end.
 
+## Phase 4 — Operations parity (done this session)
+
+- `lib/operationsData.ts`: Sales Nav rows now get a computed `salesNavSummary` (`stats.totalUsed/activeNow/expiredSoFar`, `expiringByVendor` grouped and sorted, `vendorsDue` grouped and sorted) using GAS's exact expiry math (29-day expiry, 3-day notify window).
+- `components/OperationsConsole.tsx` Sales Nav tab rewritten: stat tiles, a Vendor Payments Due panel, and a collapsible Expiring-Soon-by-vendor panel (click a vendor to expand), replacing the old flat all-rows dump.
+- Recruiting Pipeline tab: applicant status is now the real 6-value GAS list (`Applied, Whatsapp Message Sent, Accepted, Rejected, Onboarding, Hired`) instead of free text, and each row has an **Edit** button for a full-field edit (name/email/phone/LI/position/notes) via a new `updateApplicant` action in `app/api/operations/route.ts`.
+- New merged **Contact Search** on the Appointments tab — searches the Master DB sends log AND every approved recruiter's own FU Tracker sheet (`lib/opsSearch.ts`, `app/api/operations/search/route.ts`), matching GAS `apiSearchContacts`. Capped at 40 results / 60 recruiters scanned to keep it fast; this hits the Sheets API per recruiter so it's on-demand (2+ characters), not loaded automatically.
+- Appointment Recall now requires a typed reason (prompt), matching GAS/Phase 1's `recallAppointment` requirement.
+- `npm run build` passes. **Not yet manually verified** — needs a real Ops session with populated `sales_nav_inventory`/`applicants` data and at least one recruiter with a real FU Tracker sheet to test search against.
+
 ## Roadmap (not started yet — check in before each)
-- **Phase 4 — Operations parity:** vendor-grouped Sales Nav inventory, onboarding checklist/status pipeline, merged contact search, full applicant edit.
 - **Phase 5 — Growth parity:** the add/update/archive-client + mark-ledger-sent actions noted above, recruiter oversight breakdowns, reports, feedback "mark reviewed" + appointment review/recall in Growth, CEO Brainstorm AI, impersonation, drilldown popups, team task reassignment/recurring tasks, Vendor Management.
 - **Phase 6 — Agent/Client polish:** Agent's full 6-step bilingual onboarding with gated Call Outcome select; Client's cycle/date-range filters, feedback/recall tags, charts.

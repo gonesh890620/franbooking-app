@@ -103,6 +103,21 @@ export async function POST(req: Request) {
       return json({ ok: true });
     }
 
+    // Full-field edit (name/email/phone/LI/position/notes), matching GAS's
+    // apiOpsUpdateApplicant — distinct from the status-only quick action above.
+    if (action === "updateApplicant") {
+      await supabase.from("applicants").update({
+        name: body.name || "",
+        email: body.email || "",
+        phone: body.phone || "",
+        linkedin_url: body.liProfile || "",
+        position: body.position || "",
+        notes: body.notes || "",
+        updated_at: new Date().toISOString()
+      }).eq("id", String(body.applicantId || ""));
+      return json({ ok: true });
+    }
+
     if (action === "updateClientStatus") {
       const campaignId = String(body.campaignId || "");
       const { data: campaign } = await supabase.from("campaigns").select("campaign_name").eq("id", campaignId).maybeSingle();
