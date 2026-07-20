@@ -269,6 +269,8 @@ async function migrateRecruiterOwnedSheets(supabase: Supabase) {
           const li = text(r, 2);
           return {
             recruiter_id: recruiterId,
+            recruiter_name: text(recRow, RC.NAME) || email,
+            recruiter_email: email,
             name: text(r, 1),
             linkedin_url: li,
             normalized_linkedin_url: normalizeLi(li) || `legacy-row-${sheetId}-${idx + 2}`,
