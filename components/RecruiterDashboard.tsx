@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Usage = {
   nurtureBalance?: number;
@@ -30,6 +30,7 @@ type Bootstrap = {
   usage?: Usage;
   clients?: { clients: ClientAssignment[] };
   tasks?: { tasks: Task[]; reviewTasks: Task[] };
+  clientRatio?: { rows: Array<{ client: string; count: number; pct: number }> };
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -61,6 +62,9 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
   const [stats, setStats] = useState<{ period?: string; total?: number; contacts?: number; outreach?: number; byDate?: Array<{ date: string; count: number }> }>({});
   const [feedback, setFeedback] = useState({ salesNavAll: true, salesNavNoCount: "", salesNavNoReason: "", unusual: "", responsesToday: "", comments: "" });
   const [leave, setLeave] = useState({ leaveDate: "", duration: "1", reason: "" });
+  const [aiBusy, setAiBusy] = useState(false);
+  const [unsureRows, setUnsureRows] = useState<Array<{ code?: string; criteria: string; response?: string }>>([]);
+  const timeLogSessionId = useRef<string | null>(null);
 
   async function loadBootstrap() {
     setLoading(true);
@@ -78,10 +82,50 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
     if (user) void loadBootstrap();
   }, [user]);
 
+  // Time Log heartbeat — starts an online session on login, pings every ~4
+  // minutes (jittered so many recruiters logging in together don't collide),
+  // and ends the session on logout/unmount. Non-blocking: failures here
+  // should never affect the rest of the dashboard.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    let pingTimer: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      try {
+        const res = await api<{ ok: boolean; sessionId?: string }>("/api/recruiter/timelog", {
+          method: "POST",
+          body: JSON.stringify({ action: "start" })
+        });
+        if (cancelled) return;
+        timeLogSessionId.current = res.sessionId || null;
+        const jitter = Math.floor(Math.random() * 60000);
+        pingTimer = setInterval(() => {
+          if (!timeLogSessionId.current) return;
+          void api("/api/recruiter/timelog", {
+            method: "POST",
+            body: JSON.stringify({ action: "ping", sessionId: timeLogSessionId.current })
+          }).catch(() => {});
+        }, 4 * 60000 + jitter);
+      } catch {
+        // Time log tracking is best-effort.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (pingTimer) clearInterval(pingTimer);
+      if (timeLogSessionId.current) {
+        const sessionId = timeLogSessionId.current;
+        timeLogSessionId.current = null;
+        void api("/api/recruiter/timelog", { method: "POST", body: JSON.stringify({ action: "end", sessionId }) }).catch(() => {});
+      }
+    };
+  }, [user]);
+
   const clients = boot.clients?.clients || [];
   const tasks = boot.tasks?.tasks || [];
   const reviewTasks = boot.tasks?.reviewTasks || [];
   const currentTasks = useMemo(() => [...tasks, ...reviewTasks], [tasks, reviewTasks]);
+  const nurtureClientPaused = Boolean(clients.find((c) => c.name === nurture.client) && /paused/i.test(clients.find((c) => c.name === nurture.client)?.status || ""));
 
   async function login() {
     setLoading(true);
@@ -139,6 +183,67 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
   async function loadNurtureTemplate() {
     const tpl = await tool<{ body?: string; text?: string }>("nurtureTpl", { nType: nurture.nurtureType, client: nurture.client });
     setNurture({ ...nurture, reply: tpl.body || tpl.text || "" });
+  }
+
+  async function callAi(action: string, body: Record<string, unknown>) {
+    setAiBusy(true);
+    setMessage("");
+    try {
+      const data = await api<{ body: string; error?: string; message?: string }>("/api/recruiter/ai", {
+        method: "POST",
+        body: JSON.stringify({ action, ...body })
+      });
+      return data.body || "";
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "AI request failed");
+      return null;
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function generateOutreachAi() {
+    const body = await callAi("generateOutreach", { name: outreach.name, outType: outreach.outType });
+    if (body !== null) setOutreach((o) => ({ ...o, content: body }));
+  }
+
+  async function rewriteOutreachAi() {
+    if (!outreach.content.trim()) { setMessage("Write a draft first, then Rewrite."); return; }
+    const body = await callAi("rewriteOutreach", { name: outreach.name, li: outreach.li, draft: outreach.content, outType: outreach.outType });
+    if (body !== null) setOutreach((o) => ({ ...o, content: body }));
+  }
+
+  async function generateNurtureAi() {
+    const body = await callAi("generateNurture", { li: nurture.li, nurtureType: nurture.nurtureType, conversation: nurture.conversation, client: nurture.client });
+    if (body !== null) setNurture((n) => ({ ...n, reply: body }));
+  }
+
+  async function rewriteNurtureAi() {
+    if (!nurture.reply.trim()) { setMessage("Write a draft first, then Rewrite."); return; }
+    const body = await callAi("rewriteNurture", { li: nurture.li, draft: nurture.reply, client: nurture.client });
+    if (body !== null) setNurture((n) => ({ ...n, reply: body }));
+  }
+
+  async function loadUnsureCriteria() {
+    if (unsureRows.length) return;
+    const data = await tool<{ rows: Array<{ code?: string; criteria: string; response?: string }> }>("unsureCriteria");
+    setUnsureRows(data.rows || []);
+  }
+
+  // Rotation — picks the least-loaded non-paused client from the recruiter's
+  // own client-ratio counts, matching GAS's Rotation button (ratio-balancing,
+  // excludes paused clients so a prospect never gets assigned to a client
+  // that can't take them right now).
+  function runRotation() {
+    const ratioRows = boot.clientRatio?.rows || [];
+    const pausedNames = new Set(clients.filter((c) => /paused/i.test(c.status)).map((c) => c.name));
+    const eligibleClientNames = clients.filter((c) => !pausedNames.has(c.name)).map((c) => c.name);
+    const candidates = ratioRows.filter((r) => eligibleClientNames.includes(r.client));
+    const pool = candidates.length ? candidates : eligibleClientNames.map((name) => ({ client: name, count: 0, pct: 0 }));
+    if (!pool.length) { setMessage("No active (non-paused) clients available for Rotation."); return; }
+    const best = pool.reduce((min, row) => (row.count < min.count ? row : min), pool[0]);
+    setNurture((n) => ({ ...n, client: best.client }));
+    setMessage(`Rotation picked ${best.client}.`);
   }
 
   async function loadStats() {
@@ -330,6 +435,8 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
             <label>Message<textarea value={outreach.content} onChange={(e) => setOutreach({ ...outreach, content: e.target.value })} /></label>
             <div className="actions">
               <button className="btn btn-outline" disabled={loading} onClick={loadOutreachTemplate}>Load Template</button>
+              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={generateOutreachAi}>AI Generate</button>
+              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={rewriteOutreachAi}>AI Rewrite</button>
               <button className="btn btn-outline" disabled={loading} onClick={() => loadTargetArea("")}>Target Area</button>
               <button className="btn btn-primary" disabled={loading} onClick={saveOutreach}>Save Outreach</button>
             </div>
@@ -363,13 +470,36 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: { ema
               </div>
             )}
             <label>LinkedIn URL<input value={nurture.li} onChange={(e) => setNurture({ ...nurture, li: e.target.value })} /></label>
-            <label>Client<select value={nurture.client} onChange={(e) => setNurture({ ...nurture, client: e.target.value })}><option value="">Select client</option>{clients.map((c) => <option key={c.name} value={c.name}>{c.name} {c.status ? `(${c.status})` : ""}</option>)}</select></label>
-            <label>Type<select value={nurture.nurtureType} onChange={(e) => setNurture({ ...nurture, nurtureType: e.target.value })}><option>Interested</option><option>Unsure</option><option>SDFU</option><option>FU1</option><option>FU2</option><option>FU3</option><option>Client Rotation</option><option>Not Interested</option></select></label>
+            <label>
+              Client
+              <span className="actions" style={{ display: "inline-flex", marginLeft: 8 }}>
+                <select value={nurture.client} onChange={(e) => setNurture({ ...nurture, client: e.target.value })}><option value="">Select client</option>{clients.map((c) => <option key={c.name} value={c.name}>{c.name} {c.status ? `(${c.status})` : ""}</option>)}</select>
+                <button type="button" className="btn btn-outline" disabled={loading} onClick={runRotation}>Rotation</button>
+              </span>
+            </label>
+            {nurtureClientPaused && (
+              <div className="notice warn">
+                {nurture.client} is currently paused. Wait for it to reactivate, or use Rotation to pick another client.
+              </div>
+            )}
+            <label>Type<select value={nurture.nurtureType} onChange={(e) => { const nurtureType = e.target.value; setNurture({ ...nurture, nurtureType }); if (nurtureType === "Unsure") void loadUnsureCriteria(); }}><option>Interested</option><option>Unsure</option><option>SDFU</option><option>FU1</option><option>FU2</option><option>FU3</option><option>Client Rotation</option><option>Not Interested</option></select></label>
+            {nurture.nurtureType === "Unsure" && unsureRows.length > 0 && (
+              <div className="compact-list">
+                {unsureRows.map((row, idx) => (
+                  <div className="compact-row" key={idx}>
+                    <strong>{row.criteria}</strong>
+                    {row.response && <span>{row.response}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
             <label>Conversation<textarea value={nurture.conversation} onChange={(e) => setNurture({ ...nurture, conversation: e.target.value })} /></label>
             <label>Reply<textarea value={nurture.reply} onChange={(e) => setNurture({ ...nurture, reply: e.target.value })} /></label>
             <div className="actions">
               <button className="btn btn-outline" disabled={loading} onClick={loadNurtureTemplate}>Load Template</button>
-              <button className="btn btn-primary" disabled={loading} onClick={saveNurture}>Save Nurture</button>
+              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={generateNurtureAi}>AI Generate</button>
+              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={rewriteNurtureAi}>AI Rewrite</button>
+              <button className="btn btn-primary" disabled={loading || nurtureClientPaused} onClick={saveNurture}>Save Nurture</button>
             </div>
           </div>
         </section>

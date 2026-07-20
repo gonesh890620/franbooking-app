@@ -215,8 +215,19 @@ Phase 1 (data-architecture correctness) is done:
 - `components/AdminConsole.tsx` rewritten with tabs (Users / Add User / Staff Report / Activity Log, reusing the existing `.tabs`/`.tab` CSS already used by `RecruiterDashboard.tsx`), an Approve button on pending rows, a required-reason prompt on Remove, and a credential display/copy box after Create or Reset Password.
 - `npm run build` passes. **Not yet manually verified** — needs the SQL migration run and `ADMIN_USERNAME`/`ADMIN_PASSWORD` set in Vercel before it's testable end-to-end.
 
+## Phase 3 — Recruiter parity (done this session)
+
+- **New env var:** `ANTHROPIC_API_KEY` — required for AI Generate/Rewrite to work (already listed in `MIGRATION_PLAN.md`'s required Vercel env vars, but now actually wired up). Optional model note: GAS used `claude-sonnet-4-6` for Nurture AI; ported to `claude-sonnet-5` (current model) since the old ID may not be callable anymore. Outreach AI still uses `claude-haiku-4-5-20251001`, unchanged from GAS.
+- New `lib/ai.ts` (Anthropic call + GAS's exact prompt text for Outreach InMail/DM/Invite generate, Outreach rewrite, Nurture generate per nurture-type, Nurture rewrite, plus `COPY_QUALITY_RULES`), `lib/credits.ts` (credit check/decrement/refund against Supabase `recruiter_credits`, matching GAS `checkAndDecrementCredit_` — this didn't exist before; credits were previously only ever added, never spent), `app/api/recruiter/ai/route.ts`.
+- Recruiter Outreach and Nurture tabs now have **AI Generate** and **AI Rewrite** buttons, spending outreach/nurture credits respectively (refunded automatically on API failure, matching GAS).
+- **Rotation button** added next to the Nurture Client selector — picks the least-loaded non-paused client using `boot.clientRatio` (now returned by bootstrap, see Phase 1) and the Daily Assignment paused-status list.
+- **Dynamic Unsure-criteria panel** — selecting nurture type "Unsure" now loads and displays the server-driven criteria list (`getUnsureCriteria`, already existed in `lib/legacyRecruiter.ts` but was unused by the UI).
+- **Paused-client guard** on the Nurture tab: an amber banner appears and Save is disabled when the selected client is paused, matching GAS's Tasks-tab guard (which already existed) now also on Nurture.
+- **Time Log heartbeat**: new `lib/legacyRecruiter.ts` `timeLogStart`/`timeLogPing`/`timeLogEnd` (Supabase `time_logs` table, already existed in schema but was unused) + `app/api/recruiter/timelog/route.ts`. `RecruiterDashboard.tsx` starts a session on login, pings every ~4 min (jittered), ends on logout/unmount.
+- **Not done / deliberately skipped:** the LI Screening reference card (static reference text/checklist from the extension) — purely informational, no functional impact, lowest priority of the Phase 3 list. Can be added later if wanted.
+- `npm run build` passes. **Not yet manually verified** — needs `ANTHROPIC_API_KEY` set in Vercel and a real recruiter session to test AI Generate/Rewrite, Rotation, and the Time Log heartbeat end-to-end.
+
 ## Roadmap (not started yet — check in before each)
-- **Phase 3 — Recruiter parity:** Rotation button + CA/NY-aware filtering, AI Generate/Custom+Rewrite, LI Screening reference card, dynamic Unsure-criteria panel, Time Log heartbeat, paused-client guard banner.
 - **Phase 4 — Operations parity:** vendor-grouped Sales Nav inventory, onboarding checklist/status pipeline, merged contact search, full applicant edit.
 - **Phase 5 — Growth parity:** the add/update/archive-client + mark-ledger-sent actions noted above, recruiter oversight breakdowns, reports, feedback "mark reviewed" + appointment review/recall in Growth, CEO Brainstorm AI, impersonation, drilldown popups, team task reassignment/recurring tasks, Vendor Management.
 - **Phase 6 — Agent/Client polish:** Agent's full 6-step bilingual onboarding with gated Call Outcome select; Client's cycle/date-range filters, feedback/recall tags, charts.

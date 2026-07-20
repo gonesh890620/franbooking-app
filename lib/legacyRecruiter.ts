@@ -210,6 +210,42 @@ export function logoutRecruiter() {
   clearSession();
 }
 
+// Time Log — online/offline heartbeat tracking (Supabase-only, matches GAS's
+// TIME_LOG_ID sheet). Starting a session auto-closes any session left open
+// by a stale panel teardown, matching GAS's 30-min-stale auto-close intent.
+export async function timeLogStart(email: string) {
+  const user = await findSupabaseUser(email);
+  if (!user) return { error: "Unauthorized" };
+  const supabase = getSupabaseAdmin() as any;
+  await supabase.from("time_logs")
+    .update({ ended_at: new Date().toISOString(), auto_closed: true })
+    .eq("user_id", user.id)
+    .is("ended_at", null);
+  const { data } = await supabase.from("time_logs").insert({ user_id: user.id }).select("id").single();
+  return { ok: true, sessionId: data?.id };
+}
+
+export async function timeLogPing(email: string, sessionId: string) {
+  const user = await findSupabaseUser(email);
+  if (!user || !sessionId) return { error: "Unauthorized" };
+  await (getSupabaseAdmin() as any).from("time_logs")
+    .update({ last_activity_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("user_id", user.id)
+    .is("ended_at", null);
+  return { ok: true };
+}
+
+export async function timeLogEnd(email: string, sessionId: string) {
+  const user = await findSupabaseUser(email);
+  if (!user || !sessionId) return { error: "Unauthorized" };
+  await (getSupabaseAdmin() as any).from("time_logs")
+    .update({ ended_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("user_id", user.id);
+  return { ok: true };
+}
+
 async function getFuSheet(email: string) {
   const rec = await findRecruiter(email);
   if (!rec || !rec.sheetId) return null;
@@ -288,6 +324,11 @@ export async function getClientStatus(email: string, clientName: string) {
 export async function isClientPaused(email: string, clientName: string) {
   const status = await getClientStatus(email, clientName);
   return /paused/i.test(status);
+}
+
+export async function getFuContactName(email: string, li: string) {
+  const found = await findFuRowByLi(email, li);
+  return found ? String(found.row[FU.NAME] || "").trim() : "";
 }
 
 export async function findFuRowByLi(email: string, li: string) {
