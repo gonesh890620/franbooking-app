@@ -29,17 +29,32 @@ export default function AdminLogin() {
 
   return (
     <main className="login-shell">
-      <section className="login-card">
-        <div className="brand">Franbooking</div>
+      <form
+        className="login-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void login();
+        }}
+      >
+        <div className="app-logo">⚙️ Franbooking</div>
         <h1>Admin Login</h1>
         <p>This is the shared Admin account used for user management only.</p>
-        <div className="form-grid">
-          <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} /></label>
-          <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          <button className="btn btn-primary" disabled={loading} onClick={login}>Login</button>
+
+        <div className="form-row">
+          <label>Username</label>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} required />
         </div>
-        {message && <div className="notice error">{message}</div>}
-      </section>
+        <div className="form-row">
+          <label>Password</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+
+        <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
+          {loading ? "Signing in…" : "Login"}
+        </button>
+
+        {message ? <div className="msg msg-error">{message}</div> : null}
+      </form>
     </main>
   );
 }

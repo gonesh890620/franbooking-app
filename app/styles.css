@@ -6,10 +6,12 @@
    app changes, re-port it here.
    Section 2 is app-only additions (modals, impersonation banner, charts)
    written in the same visual language.
-   Section 3 is a temporary compatibility layer mapping the older invented
-   Next.js class names onto GAS equivalents, so panels that have not been
-   migrated yet still render in the GAS style. Delete each alias as the
-   corresponding component is rewritten to use real GAS class names.
+   There is deliberately no compatibility/alias layer. An earlier version of
+   this file carried one while panels were being migrated; every panel now
+   uses real GAS class names, so it was removed. If a component needs a style
+   that isn't here, add it to section 2 in this visual language rather than
+   inventing a parallel system -- that divergence is what made the app stop
+   looking like the GAS original in the first place.
    ========================================================================= */
 
 /* ===========================================================================
@@ -263,77 +265,12 @@ body.full-page.narrow-page .stats-grid { grid-template-columns: repeat(2, 1fr); 
 .flex-row { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
 .mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mb-8 { margin-bottom: 8px; }
 
-/* ===========================================================================
-   SECTION 3 -- Compatibility aliases (TEMPORARY).
-   Older components still use invented class names. These map them onto the
-   GAS look so nothing renders unstyled mid-migration. Remove each alias once
-   its component uses real GAS classes.
-   ======================================================================== */
-
-/* .panel -> .card */
-.panel { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 10px; }
-body.full-page .panel { padding: 20px 24px; margin-bottom: 16px; border-radius: 14px; }
-.panel h2 { margin-bottom: 10px; }
-
-/* .app-shell -> .screen-content */
-.app-shell { max-width: 1100px; margin: 0 auto; padding: 24px 28px; }
-.app-shell.wide { max-width: 1320px; }
-
-/* .topbar -> .app-header */
-.topbar { align-items: center; display: flex; gap: 12px; justify-content: space-between; margin-bottom: 14px; }
-.topbar-title { display: grid; gap: 2px; }
-.topbar h1 { font-size: 20px; }
-.brand { color: #6c2eb9; font-size: 14px; font-weight: 800; text-transform: uppercase; }
-
-/* .metric -> .stat-card */
-.metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px; }
-.metric, .count-item { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); display: grid; gap: 6px; padding: 16px 12px; text-align: center; }
-.metric span, .count-item span { color: #888; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-.metric strong, .count-item strong { color: #6c2eb9; font-size: 30px; font-weight: 800; }
-.metric.clickable { cursor: pointer; transition: all .15s; }
-.metric.clickable:hover { box-shadow: 0 3px 10px rgba(108,46,185,.18); transform: translateY(-1px); }
-.count-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-
-/* .notice -> .msg */
-.notice { border-radius: 8px; font-size: 12px; margin: 6px 0; padding: 8px 12px; }
-.notice.warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-.notice.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
-.notice.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
-.notice.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
-
-/* .task-card -> .task-item */
-.task-list { display: grid; gap: 8px; }
-.task-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.06); padding: 12px; }
-.task-head { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
-
-/* Legacy tab pills -> GAS underline tabs are defined in Section 1; the old
-   .tabs used flex-wrap pills. Section 1 wins; this only restores wrapping. */
-.tabs { flex-wrap: wrap; }
-
-/* Misc legacy layout helpers */
-.grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 860px) { .grid.two { grid-template-columns: minmax(0, 1fr) minmax(360px, 0.7fr); } }
-.form-grid { display: grid; gap: 10px; }
-.admin-create-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.actions, .credit-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.compact-list { display: grid; gap: 8px; }
-.compact-row { align-items: center; border: 1px solid #eee; border-radius: 8px; display: flex; gap: 10px; justify-content: space-between; padding: 10px 12px; }
-.compact-row span { color: #888; font-size: 12px; }
-.compact-button { background: #fff; cursor: pointer; text-align: left; width: 100%; }
-.compact-button:hover { background: #f3eaff; }
-.muted { color: #888; font-size: 12px; }
-.primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 14px; border-radius: 8px; background: #6c2eb9; color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; }
-.primary-link:hover { background: #5a22a0; }
-.quick-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-.quick-card { border: 1.5px solid #eee; border-radius: 10px; color: #1a1a1a; display: grid; gap: 4px; min-height: 76px; padding: 14px; text-decoration: none; }
-.quick-card:hover { border-color: #6c2eb9; background: #f3eaff; }
-.quick-card span { font-weight: 800; }
-.quick-card small { color: #888; }
-
-/* Bare tables in legacy components inherit the GAS data-table look */
+/* Bare tables inherit the GAS data-table look, so a plain <table> in any panel
+   matches .data-table without needing the class. */
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
 th { text-align: left; padding: 7px 8px; background: #f5f5f7; color: #555; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
 td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+tr:hover td { background: #fafafa; }
 body.full-page table { font-size: 13px; }
 body.full-page th { font-size: 11px; padding: 9px 12px; }
 body.full-page td { padding: 10px 12px; }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import BodyClass from "./BodyClass";
+import { AppHeader } from "./ui";
 
 type ChatTurn = { role: "user" | "assistant"; text: string };
 type PeriodKey = "today" | "yesterday" | "last7" | "last14" | "last28";
@@ -19,7 +21,7 @@ function StatTile({ label, value, sub, onClick, color }: { label: string; value:
     <div className={`metric ${onClick ? "clickable" : ""}`} onClick={onClick} style={{ cursor: onClick ? "pointer" : undefined }}>
       <span>{label}</span>
       <strong style={color ? { color } : undefined}>{value}</strong>
-      {sub && <div className="muted" style={{ fontSize: 11 }}>{sub}</div>}
+      {sub && <div className="text-muted" style={{ fontSize: 11 }}>{sub}</div>}
     </div>
   );
 }
@@ -476,23 +478,23 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   }
 
   return (
-    <main className="app-shell wide">
-      <div className="topbar">
-        <div className="topbar-title">
-          <div className="brand">Franbooking</div>
-          <h1>Growth Dashboard</h1>
-          <div className="muted">{session.name} | {session.email}</div>
-        </div>
-        <button className="btn btn-outline" onClick={reload}>Refresh</button>
-      </div>
+    <>
+      <BodyClass names="full-page wide-page" />
 
-      {loadError && <div className="notice error">Growth data failed to load: {loadError}</div>}
-      {message && <div className="notice error">{message}</div>}
+      <AppHeader logo="📈 Growth" user={`${session.name} | ${session.email}`}>
+        <button className="btn btn-ghost btn-sm" onClick={reload}>
+          ↻ Refresh
+        </button>
+      </AppHeader>
+
+      <div className="screen-content">
+      {loadError && <div className="msg msg-error">Growth data failed to load: {loadError}</div>}
+      {message && <div className="msg msg-error">{message}</div>}
 
       {/* Pinned block — always visible above the tabs, matching GAS */}
-      <section className="panel" style={{ background: "#eef0ff", borderColor: "#dfe3ff" }}>
-        <div className="section-head"><h2>🏢 Client Status</h2><span className="muted">Click a number for the list</span></div>
-        <section className="metric-grid">
+      <section className="card" style={{ background: "#eef0ff", borderColor: "#dfe3ff" }}>
+        <div className="card-header"><h2>🏢 Client Status</h2><span className="text-muted">Click a number for the list</span></div>
+        <section className="stats-grid">
           <StatTile label="On Fire" value={clients.onFire ?? 0} color="#dc2626" onClick={() => showClientBucket("onFire", "On Fire")} />
           <StatTile label="Smokin" value={clients.smokin ?? 0} color="#ea580c" onClick={() => showClientBucket("smokin", "Smokin")} />
           <StatTile label="On Track" value={clients.onTrack ?? 0} color="#0891b2" onClick={() => showClientBucket("onTrack", "On Track")} />
@@ -502,8 +504,8 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={showWaitList} />
         </section>
 
-        <div className="section-head" style={{ marginTop: 14 }}><h2>📅 Appointments</h2></div>
-        <section className="metric-grid">
+        <div className="card-header" style={{ marginTop: 14 }}><h2>📅 Appointments</h2></div>
+        <section className="stats-grid">
           <StatTile label="Today" value={appts.today ?? 0} />
           <StatTile label="Yesterday" value={appts.yesterday ?? 0} />
           <StatTile label="Last 7 Days" value={appts.last7 ?? 0} />
@@ -512,7 +514,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Total Appt So Far" value={appts.total ?? 0} />
         </section>
 
-        <div className="section-head" style={{ marginTop: 14 }}><h2>📥 All Appointments</h2><span className="muted">Master sheet — every appointment received</span></div>
+        <div className="card-header" style={{ marginTop: 14 }}><h2>📥 All Appointments</h2><span className="text-muted">Master sheet — every appointment received</span></div>
         <PeriodTable
           title=""
           rows={[
@@ -521,7 +523,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             { label: "Recall", counts: allAppt.recall || {} }
           ]}
         />
-        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+        <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
           Recall reasons (all-time) — Looking for Job: <strong>{allAppt.recallReasons?.lookingForJob ?? 0}</strong> &nbsp;
           Vendor: <strong>{allAppt.recallReasons?.vendor ?? 0}</strong> &nbsp;
           Other: <strong>{allAppt.recallReasons?.other ?? 0}</strong>
@@ -529,103 +531,103 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       </section>
 
       {tab === "dashboard" ? (
-        <section className="panel">
-          <div className="section-head"><h2>Sections</h2></div>
-          <p className="muted" style={{ margin: 0 }}>Select a section below to see its full details.</p>
+        <section className="card">
+          <div className="card-header"><h2>Sections</h2></div>
+          <p className="text-muted" style={{ margin: 0 }}>Select a section below to see its full details.</p>
           <div className="section-tile-grid">
             <button className="section-tile" onClick={() => setTab("tasks")}>
               <span className="section-tile-icon">📋</span>
               <span>
                 <div className="section-tile-title">Daily Task</div>
-                <div className="muted">Personal task list grouped by topic — priority, ETA/TBD, and auto-generated recurring tasks</div>
+                <div className="text-muted">Personal task list grouped by topic — priority, ETA/TBD, and auto-generated recurring tasks</div>
               </span>
             </button>
             <button className="section-tile" onClick={openRecruitersTab}>
               <span className="section-tile-icon">👥</span>
               <span>
-                <div className="section-tile-title">Recruiters <span className="muted" style={{ fontWeight: 400 }}>(Recruiter Activity)</span></div>
-                <div className="muted">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
+                <div className="section-tile-title">Recruiters <span className="text-muted" style={{ fontWeight: 400 }}>(Recruiter Activity)</span></div>
+                <div className="text-muted">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
               </span>
             </button>
             <button className="section-tile" onClick={openClientsTab}>
               <span className="section-tile-icon">🏢</span>
               <span>
                 <div className="section-tile-title">Client Tracker</div>
-                <div className="muted">Every client — quota, cycle, status, and payment in one table</div>
+                <div className="text-muted">Every client — quota, cycle, status, and payment in one table</div>
               </span>
             </button>
             <button className="section-tile" onClick={() => setTab("linkbooking")}>
               <span className="section-tile-icon">🔗</span>
               <span>
                 <div className="section-tile-title">Link Open vs Booking</div>
-                <div className="muted">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
+                <div className="text-muted">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
               </span>
             </button>
             <button className="section-tile" onClick={() => setTab("finance")}>
               <span className="section-tile-icon">💰</span>
               <span>
-                <div className="section-tile-title">Finance <span className="muted" style={{ fontWeight: 400 }}>(Cost &amp; Payments)</span></div>
-                <div className="muted">Company age, all-time cost &amp; earnings, and adding new cost/payment entries</div>
+                <div className="section-tile-title">Finance <span className="text-muted" style={{ fontWeight: 400 }}>(Cost &amp; Payments)</span></div>
+                <div className="text-muted">Company age, all-time cost &amp; earnings, and adding new cost/payment entries</div>
               </span>
             </button>
             <button className="section-tile" onClick={openReportsTab}>
               <span className="section-tile-icon">📈</span>
               <span>
-                <div className="section-tile-title">Reports <span className="muted" style={{ fontWeight: 400 }}>(Billing Cycle &amp; Directory)</span></div>
-                <div className="muted">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time appts, sends &amp; Sales Nav seats</div>
+                <div className="section-tile-title">Reports <span className="text-muted" style={{ fontWeight: 400 }}>(Billing Cycle &amp; Directory)</span></div>
+                <div className="text-muted">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time appts, sends &amp; Sales Nav seats</div>
               </span>
             </button>
             <button className="section-tile" onClick={() => setTab("vendors")}>
               <span className="section-tile-icon">🏬</span>
               <span>
                 <div className="section-tile-title">Vendor Management</div>
-                <div className="muted">Every LI profile by vendor — issue history, vendor feedback, replacements, and downtime per cycle</div>
+                <div className="text-muted">Every LI profile by vendor — issue history, vendor feedback, replacements, and downtime per cycle</div>
               </span>
             </button>
           </div>
         </section>
       ) : (
-        <div className="actions" style={{ marginTop: 14, marginBottom: 4 }}>
+        <div className="btn-group" style={{ marginTop: 14, marginBottom: 4 }}>
           <button className="btn btn-outline" onClick={() => setTab("dashboard")}>← Dashboard</button>
         </div>
       )}
 
       {tab === "dashboard" && (
         <>
-          <section className="grid two">
-            <div className="panel">
-              <div className="section-head"><h2>Recent Feedback</h2><span className="badge">{unreviewedFeedback.length} unreviewed</span></div>
-              <div className="compact-list">
+          <section className="row-auto">
+            <div className="card">
+              <div className="card-header"><h2>Recent Feedback</h2><span className="badge">{unreviewedFeedback.length} unreviewed</span></div>
+              <div className="task-list">
                 {unreviewedFeedback.slice(0, 8).map((f: any) => (
-                  <div className="compact-row" key={f.id}>
+                  <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={f.id}>
                     <strong>{f.name}</strong>
                     <span>{f.responses_today || 0} responses | {f.comments || f.unusual}</span>
                     <button className="btn btn-outline" onClick={() => doAction({ action: "markFeedbackReviewed", id: f.id })}>Reviewed</button>
                   </div>
                 ))}
-                {unreviewedFeedback.length === 0 && <div className="muted">Nothing to review.</div>}
+                {unreviewedFeedback.length === 0 && <div className="text-muted">Nothing to review.</div>}
               </div>
             </div>
-            <div className="panel">
+            <div className="card">
               <h2>Recent Appointments</h2>
-              <div className="compact-list">
+              <div className="task-list">
                 {(data.appointments || []).slice(0, 8).map((a: any) => (
-                  <div className="compact-row" key={a.id}><strong>{a.invitee_name}</strong><span>{a.client_name} | {a.status}</span></div>
+                  <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={a.id}><strong>{a.invitee_name}</strong><span>{a.client_name} | {a.status}</span></div>
                 ))}
               </div>
             </div>
           </section>
-          <section className="panel">
+          <section className="card">
             <h2>👁 Impersonate</h2>
-            <div className="actions">
+            <div className="btn-group">
               <button className="btn btn-outline" onClick={() => openImpersonatePicker("operations")}>Operations Panel →</button>
               <button className="btn btn-outline" onClick={() => openImpersonatePicker("recruiter")}>Recruiter Panel →</button>
             </div>
             {impersonateRole && (
-              <div className="compact-list">
-                {impersonateOptions.length === 0 && <div className="muted">Loading...</div>}
+              <div className="task-list">
+                {impersonateOptions.length === 0 && <div className="text-muted">Loading...</div>}
                 {impersonateOptions.map((u) => (
-                  <button key={u.email} className="compact-row compact-button" onClick={() => impersonate(u.email)}>
+                  <button key={u.email} className="task-item" role="button" tabIndex={0} onClick={() => impersonate(u.email)}>
                     <strong>{u.name}</strong><span>{u.email}</span>
                   </button>
                 ))}
@@ -637,19 +639,19 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "recruiters" && (
         <>
-          <section className="panel">
-            <div className="section-head"><h2>👥 Recruiter Activity</h2></div>
-            <section className="metric-grid">
+          <section className="card">
+            <div className="card-header"><h2>👥 Recruiter Activity</h2></div>
+            <section className="stats-grid">
               <StatTile label="Active Recruiters" value={recruitersSummary.active ?? 0} sub={`${recruitersSummary.bdInhouseCount ?? 0} BD/Inhouse · ${recruitersSummary.phCount ?? 0} PH`} />
               <StatTile label="Active Sales Nav" value={recruitersSummary.activeSalesNav ?? 0} />
             </section>
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>🟢 Recruiter Status</h2><span className="muted">From Time Log — click a number for the list</span></div>
-            {!onlineStatus && <div className="muted">Loading...</div>}
+          <section className="card">
+            <div className="card-header"><h2>🟢 Recruiter Status</h2><span className="text-muted">From Time Log — click a number for the list</span></div>
+            {!onlineStatus && <div className="text-muted">Loading...</div>}
             {onlineStatus && (
-              <section className="metric-grid">
+              <section className="stats-grid">
                 <StatTile label="Online Now" value={onlineStatus.online?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.online)} color="#059669" onClick={() => showRecruiterStatusBucket("online", "Online Now")} />
                 <StatTile label="Offline" value={onlineStatus.offline?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.offline)} color="#6b7280" onClick={() => showRecruiterStatusBucket("offline", "Offline")} />
                 <StatTile label="Not Started Today" value={onlineStatus.notStarted?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.notStarted)} color="#dc2626" onClick={() => showRecruiterStatusBucket("notStarted", "Not Started Today")} />
@@ -660,8 +662,8 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             )}
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>📊 S2A by Type</h2><span className="muted">Sends per appointment</span></div>
+          <section className="card">
+            <div className="card-header"><h2>📊 S2A by Type</h2><span className="text-muted">Sends per appointment</span></div>
             <PeriodTable
               title=""
               rows={(["BD/Inhouse", "PH"] as const).map((type) => ({
@@ -671,9 +673,9 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             />
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>📤 Sends</h2><span className="muted">Click a number to see who sent them</span></div>
-            <section className="metric-grid">
+          <section className="card">
+            <div className="card-header"><h2>📤 Sends</h2><span className="text-muted">Click a number to see who sent them</span></div>
+            <section className="stats-grid">
               {PERIODS.map((p) => (
                 <StatTile
                   key={p.key}
@@ -686,57 +688,57 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             </section>
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>💬 New Nurture Sent</h2><span className="muted">First nurture message ever sent</span></div>
-            {!nurtureFu && <div className="muted">Loading...</div>}
+          <section className="card">
+            <div className="card-header"><h2>💬 New Nurture Sent</h2><span className="text-muted">First nurture message ever sent</span></div>
+            {!nurtureFu && <div className="text-muted">Loading...</div>}
             {nurtureFu && (
-              <section className="metric-grid">
+              <section className="stats-grid">
                 {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.newNurture?.[p.key] ?? 0} />)}
               </section>
             )}
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>🔁 FU Sent</h2><span className="muted">FU1 + FU2 + FU3 combined</span></div>
-            {!nurtureFu && <div className="muted">Loading...</div>}
+          <section className="card">
+            <div className="card-header"><h2>🔁 FU Sent</h2><span className="text-muted">FU1 + FU2 + FU3 combined</span></div>
+            {!nurtureFu && <div className="text-muted">Loading...</div>}
             {nurtureFu && (
               <>
-                <section className="metric-grid">
+                <section className="stats-grid">
                   {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.fuSent?.[p.key] ?? 0} />)}
                 </section>
-                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
                   FU1: <strong>{nurtureFu.fuSent?.byStage?.fu1 ?? 0}</strong> · FU2: <strong>{nurtureFu.fuSent?.byStage?.fu2 ?? 0}</strong> · FU3: <strong>{nurtureFu.fuSent?.byStage?.fu3 ?? 0}</strong>
                 </div>
               </>
             )}
           </section>
 
-          <section className="panel">
-            <div className="actions">
+          <section className="card">
+            <div className="btn-group">
               <button className="btn btn-outline" onClick={() => setShowTop5((v) => !v)}>🏆 Top 5 by Appointments (14d)</button>
               <button className="btn btn-outline" onClick={() => setShowNonProd((v) => !v)}>⚠️ Non-Productive Recruiters (14d)</button>
             </div>
             {showTop5 && (
-              <div className="compact-list">
+              <div className="task-list">
                 {(recruitersSummary.top5ByAppts || []).map((r: any, idx: number) => (
-                  <div className="compact-row" key={r.email}><strong>#{idx + 1} {r.name}</strong><span>{r.appts14} appt / {r.sends14} sent — {r.s2a}% S2A</span></div>
+                  <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={r.email}><strong>#{idx + 1} {r.name}</strong><span>{r.appts14} appt / {r.sends14} sent — {r.s2a}% S2A</span></div>
                 ))}
-                {(!recruitersSummary.top5ByAppts || recruitersSummary.top5ByAppts.length === 0) && <div className="muted">No data.</div>}
+                {(!recruitersSummary.top5ByAppts || recruitersSummary.top5ByAppts.length === 0) && <div className="text-muted">No data.</div>}
               </div>
             )}
             {showNonProd && (
-              <div className="compact-list">
+              <div className="task-list">
                 {(recruitersSummary.nonProductive || []).map((r: any) => (
-                  <div className="compact-row" key={r.email}><strong>{r.name}</strong><span className="badge">0 appts</span></div>
+                  <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={r.email}><strong>{r.name}</strong><span className="badge">0 appts</span></div>
                 ))}
-                {(!recruitersSummary.nonProductive || recruitersSummary.nonProductive.length === 0) && <div className="muted">Everyone booked at least 1 appointment.</div>}
+                {(!recruitersSummary.nonProductive || recruitersSummary.nonProductive.length === 0) && <div className="text-muted">Everyone booked at least 1 appointment.</div>}
               </div>
             )}
           </section>
 
-          <section className="panel">
+          <section className="card">
             <h2>📆 Daily Appointment by Recruiters</h2>
-            <div className="form-grid admin-create-grid">
+            <div className="row-auto">
               <label>Start<input type="date" value={s2aRange.startDate} onChange={(e) => setS2aRange({ ...s2aRange, startDate: e.target.value })} /></label>
               <label>End<input type="date" value={s2aRange.endDate} onChange={(e) => setS2aRange({ ...s2aRange, endDate: e.target.value })} /></label>
               <button className="btn btn-outline" onClick={() => loadS2ARange(s2aRange.startDate, s2aRange.endDate)}>Apply</button>
@@ -748,7 +750,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             </div>
             {s2aRangeData && (
               <>
-                <div className="muted" style={{ margin: "8px 0" }}>
+                <div className="text-muted" style={{ margin: "8px 0" }}>
                   Overall S2A — BD/Inhouse: {s2aRangeData.byType?.["BD/Inhouse"]?.s2a ?? 0}% ({s2aRangeData.byType?.["BD/Inhouse"]?.appts ?? 0}/{s2aRangeData.byType?.["BD/Inhouse"]?.sends ?? 0}) ·
                   {" "}PH: {s2aRangeData.byType?.PH?.s2a ?? 0}% ({s2aRangeData.byType?.PH?.appts ?? 0}/{s2aRangeData.byType?.PH?.sends ?? 0})
                 </div>
@@ -769,9 +771,9 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             )}
           </section>
 
-          <section className="panel">
-            <div className="section-head"><h2>📝 Daily Feedback</h2></div>
-            <div className="actions" style={{ marginBottom: 10 }}>
+          <section className="card">
+            <div className="card-header"><h2>📝 Daily Feedback</h2></div>
+            <div className="btn-group" style={{ marginBottom: 10 }}>
               <label>Date<input type="date" value={feedbackDate} onChange={(e) => setFeedbackDate(e.target.value)} /></label>
               <button className="btn btn-outline" onClick={() => loadFeedbackForDate(feedbackDate)}>Apply</button>
               <button className="btn btn-outline" onClick={() => loadFeedbackForDate(new Date().toISOString().slice(0, 10))}>Today</button>
@@ -800,10 +802,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                     </tr>
                   ))}
                   {feedbackRows && feedbackRows.length === 0 && (
-                    <tr><td colSpan={7} className="muted">No feedback submitted for this date.</td></tr>
+                    <tr><td colSpan={7} className="text-muted">No feedback submitted for this date.</td></tr>
                   )}
                   {!feedbackRows && (
-                    <tr><td colSpan={7} className="muted">Loading…</td></tr>
+                    <tr><td colSpan={7} className="text-muted">Loading…</td></tr>
                   )}
                 </tbody>
               </table>
@@ -814,9 +816,9 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "clients" && (
         <>
-          <section className="panel">
+          <section className="card">
             <h2>🏢 Client Tracker</h2>
-            <div className="actions" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+            <div className="btn-group" style={{ marginBottom: 10, flexWrap: "wrap" }}>
               <button className="btn btn-primary btn-sm" onClick={() => { setCtMsg(null); setClientModal("add"); }}>➕ Add Client</button>
               <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setUpdateClientForm(emptyUpdateClient); setClientModal("update"); }}>✏️ Update Client</button>
               <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setArchiveForm({ clientName: "", reason: "" }); setClientModal("archive"); }}>🗄️ Archive Client</button>
@@ -825,7 +827,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
               <button className="btn btn-primary btn-sm" onClick={() => { setCtMsg(null); setWaitlistForm({ date: new Date().toISOString().slice(0, 10), clientName: "", contactEmail: "", eta: "", notes: "" }); setClientModal("waitlist"); }}>➕ Add to Wait List</button>
             </div>
             <input placeholder="Search clients…" value={ctSearch} onChange={(e) => setCtSearch(e.target.value)} style={{ marginBottom: 6, width: "100%", maxWidth: 320 }} />
-            <div className="muted" style={{ marginBottom: 6, fontSize: 12 }}>{filteredClientRows.length} of {clientRows.length} client(s)</div>
+            <div className="text-muted" style={{ marginBottom: 6, fontSize: 12 }}>{filteredClientRows.length} of {clientRows.length} client(s)</div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -865,7 +867,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                     );
                   })}
                   {filteredClientRows.length === 0 && (
-                    <tr><td colSpan={14} className="muted" style={{ textAlign: "center", padding: 20 }}>{clientTrackerLoaded ? "No clients match." : "Loading…"}</td></tr>
+                    <tr><td colSpan={14} className="text-muted" style={{ textAlign: "center", padding: 20 }}>{clientTrackerLoaded ? "No clients match." : "Loading…"}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -874,13 +876,13 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {slotCheckClient && (
             <div className="modal-overlay" onClick={() => setSlotCheckClient(null)}>
-              <div className="panel" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>Check Slots — {slotCheckClient}</h2><button className="modal-close" onClick={() => setSlotCheckClient(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>Check Slots — {slotCheckClient}</h2><button className="modal-close" onClick={() => setSlotCheckClient(null)}>✕</button></div>
                 {(() => {
                   const c = clientRows.find((x) => x.name === slotCheckClient);
                   return c?.eventUrl ? <p><a href={c.eventUrl} target="_blank" rel="noreferrer">Open Calendly →</a></p> : null;
                 })()}
-                <div className="actions">
+                <div className="btn-group">
                   <button className="btn btn-primary" onClick={() => logSlotCheck("available")}>Available now — take live</button>
                   <button className="btn btn-outline" onClick={() => logSlotCheck("not_available")}>Still not available</button>
                 </div>
@@ -890,9 +892,9 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {vacationCheckClient && (
             <div className="modal-overlay" onClick={() => setVacationCheckClient(null)}>
-              <div className="panel" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>Check Vacation — {vacationCheckClient}</h2><button className="modal-close" onClick={() => setVacationCheckClient(null)}>✕</button></div>
-                <div className="actions">
+              <div className="card" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>Check Vacation — {vacationCheckClient}</h2><button className="modal-close" onClick={() => setVacationCheckClient(null)}>✕</button></div>
+                <div className="btn-group">
                   <button className="btn btn-primary" onClick={() => logVacationCheck("back")}>Client is back — reactivate</button>
                   <button className="btn btn-outline" onClick={() => logVacationCheck("still_away")}>Still on vacation</button>
                 </div>
@@ -902,10 +904,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "add" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>➕ Add Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>➕ Add Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid admin-create-grid">
+                <div className="row-auto">
                   <label>Client Name*<input value={addClientForm.clientName} onChange={(e) => setAddClientForm({ ...addClientForm, clientName: e.target.value })} /></label>
                   <label>Vertical<select value={addClientForm.vertical} onChange={(e) => setAddClientForm({ ...addClientForm, vertical: e.target.value })}><option>Broker</option><option>Direct</option><option>Other</option></select></label>
                   <label>Package Type<input value={addClientForm.packageType} onChange={(e) => setAddClientForm({ ...addClientForm, packageType: e.target.value })} /></label>
@@ -930,7 +932,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                   {addClientForm.currentStatus === "Paused" && addClientForm.pausedReason === "PAUSED Vacation" && (
                     <label>Vacation ETA
                       <input type="date" disabled={addClientForm.vacationTbd} value={addClientForm.vacationEta} onChange={(e) => setAddClientForm({ ...addClientForm, vacationEta: e.target.value })} />
-                      <span className="muted" style={{ fontSize: 11 }}><input type="checkbox" checked={addClientForm.vacationTbd} onChange={(e) => setAddClientForm({ ...addClientForm, vacationTbd: e.target.checked })} /> TBD</span>
+                      <span className="text-muted" style={{ fontSize: 11 }}><input type="checkbox" checked={addClientForm.vacationTbd} onChange={(e) => setAddClientForm({ ...addClientForm, vacationTbd: e.target.checked })} /> TBD</span>
                     </label>
                   )}
                   <label>Action Taken<input value={addClientForm.actionTaken} onChange={(e) => setAddClientForm({ ...addClientForm, actionTaken: e.target.value })} /></label>
@@ -951,7 +953,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                   <label>Web Profile<input value={addClientForm.webprofile} onChange={(e) => setAddClientForm({ ...addClientForm, webprofile: e.target.value })} /></label>
                   <label>About LI<input value={addClientForm.aboutLi} onChange={(e) => setAddClientForm({ ...addClientForm, aboutLi: e.target.value })} /></label>
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="btn-group" style={{ marginTop: 10 }}>
                   <button className="btn btn-primary" onClick={saveAddClient}>Save Client</button>
                   <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
                 </div>
@@ -961,10 +963,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "update" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>✏️ Update Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>✏️ Update Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid admin-create-grid">
+                <div className="row-auto">
                   <label>Client<select value={updateClientForm.clientName} onChange={(e) => prefillUpdateClient(e.target.value)}>
                     <option value="">Select a client…</option>
                     {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
@@ -989,7 +991,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                   {updateClientForm.currentStatus === "Paused" && updateClientForm.pausedReason === "PAUSED Vacation" && (
                     <label>Vacation ETA
                       <input type="date" disabled={updateClientForm.vacationTbd} value={updateClientForm.vacationEta} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vacationEta: e.target.value })} />
-                      <span className="muted" style={{ fontSize: 11 }}><input type="checkbox" checked={updateClientForm.vacationTbd} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vacationTbd: e.target.checked })} /> TBD</span>
+                      <span className="text-muted" style={{ fontSize: 11 }}><input type="checkbox" checked={updateClientForm.vacationTbd} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vacationTbd: e.target.checked })} /> TBD</span>
                     </label>
                   )}
                   <label>Vertical<input value={updateClientForm.vertical} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vertical: e.target.value })} /></label>
@@ -998,7 +1000,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                   <label>Payment Notes<input value={updateClientForm.paymentNotes} onChange={(e) => setUpdateClientForm({ ...updateClientForm, paymentNotes: e.target.value })} /></label>
                   <label>Quota Notes<input value={updateClientForm.quotaNotes} onChange={(e) => setUpdateClientForm({ ...updateClientForm, quotaNotes: e.target.value })} /></label>
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="btn-group" style={{ marginTop: 10 }}>
                   <button className="btn btn-primary" onClick={saveUpdateClient}>Save Changes</button>
                   <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
                 </div>
@@ -1008,17 +1010,17 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "archive" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>🗄️ Archive Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>🗄️ Archive Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid">
+                <div className="form-row">
                   <label>Client<select value={archiveForm.clientName} onChange={(e) => setArchiveForm({ ...archiveForm, clientName: e.target.value })}>
                     <option value="">Select a client…</option>
                     {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select></label>
                   <textarea placeholder="Archive reason (required)" value={archiveForm.reason} onChange={(e) => setArchiveForm({ ...archiveForm, reason: e.target.value })} />
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="btn-group" style={{ marginTop: 10 }}>
                   <button className="btn btn-primary" onClick={saveArchiveClient}>Archive</button>
                   <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
                 </div>
@@ -1028,17 +1030,17 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "markLedger" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>📤 Mark Ledger Sent</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>📤 Mark Ledger Sent</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid">
+                <div className="form-row">
                   <label>Client<select value={markLedgerForm.clientName} onChange={(e) => setMarkLedgerForm({ ...markLedgerForm, clientName: e.target.value })}>
                     <option value="">Select a client…</option>
                     {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select></label>
                   <input type="number" placeholder="Cycle number" value={markLedgerForm.cycle} onChange={(e) => setMarkLedgerForm({ ...markLedgerForm, cycle: e.target.value })} />
                 </div>
-                <div className="actions" style={{ marginTop: 10, flexWrap: "wrap" }}>
+                <div className="btn-group" style={{ marginTop: 10, flexWrap: "wrap" }}>
                   <button className="btn btn-primary" onClick={saveMarkLedgerSent}>Mark Sent</button>
                   <button className="btn btn-outline" onClick={() => copyLedgerEmailPart("subject")}>Copy Subject</button>
                   <button className="btn btn-outline" onClick={() => copyLedgerEmailPart("body")}>Copy Body</button>
@@ -1051,10 +1053,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "ledgerCsv" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>⬇️ Download Ledger CSV</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>⬇️ Download Ledger CSV</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid">
+                <div className="form-row">
                   <label>Client<select value={ledgerCsvClient} onChange={(e) => setLedgerCsvClient(e.target.value)}>
                     <option value="">Select a client…</option>
                     {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
@@ -1065,7 +1067,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                     return <div style={{ color: pct >= 100 ? "#059669" : "#dc2626", fontSize: 12 }}>% Quota Complete: {pct}% {pct >= 100 ? "— ready to export." : "— must reach 100% before exporting."}</div>;
                   })()}
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="btn-group" style={{ marginTop: 10 }}>
                   <button className="btn btn-primary" disabled={!ledgerCsvClient || (clientRows.find((x) => x.name === ledgerCsvClient)?.quotaCompletePct || 0) < 100} onClick={exportLedgerCsv}>Export CSV</button>
                   <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
                 </div>
@@ -1075,17 +1077,17 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           {clientModal === "waitlist" && (
             <div className="modal-overlay" onClick={() => setClientModal(null)}>
-              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-                <div className="section-head"><h2>➕ Add to Wait List</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+              <div className="card" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="card-header"><h2>➕ Add to Wait List</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
                 {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
-                <div className="form-grid">
+                <div className="form-row">
                   <label>Date<input type="date" value={waitlistForm.date} onChange={(e) => setWaitlistForm({ ...waitlistForm, date: e.target.value })} /></label>
                   <input placeholder="Client Name" value={waitlistForm.clientName} onChange={(e) => setWaitlistForm({ ...waitlistForm, clientName: e.target.value })} />
                   <input placeholder="Contact Email" value={waitlistForm.contactEmail} onChange={(e) => setWaitlistForm({ ...waitlistForm, contactEmail: e.target.value })} />
                   <label>ETA to Launch<input type="date" value={waitlistForm.eta} onChange={(e) => setWaitlistForm({ ...waitlistForm, eta: e.target.value })} /></label>
                   <textarea placeholder="Notes" value={waitlistForm.notes} onChange={(e) => setWaitlistForm({ ...waitlistForm, notes: e.target.value })} />
                 </div>
-                <div className="actions" style={{ marginTop: 10 }}>
+                <div className="btn-group" style={{ marginTop: 10 }}>
                   <button className="btn btn-primary" onClick={saveAddWaitlist}>Save</button>
                   <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
                 </div>
@@ -1096,19 +1098,19 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "finance" && (
-        <section className="grid two">
-          <div className="panel">
+        <section className="row-auto">
+          <div className="card">
             <h2>💵 Add Cost</h2>
-            <div className="form-grid">
+            <div className="form-row">
               <input placeholder="Amount" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
               <input placeholder="Description" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
               <textarea placeholder="Notes" value={cost.notes} onChange={(e) => setCost({ ...cost, notes: e.target.value })} />
               <button className="btn btn-primary" onClick={() => doAction({ action: "addCost", ...cost })}>Add Cost</button>
             </div>
           </div>
-          <div className="panel">
+          <div className="card">
             <h2>🧾 Add Client Payment</h2>
-            <div className="form-grid">
+            <div className="form-row">
               <input placeholder="Client" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
               <input placeholder="Total Billed" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
               <input placeholder="Invoice Ref" value={payment.invoiceRef} onChange={(e) => setPayment({ ...payment, invoiceRef: e.target.value })} />
@@ -1119,21 +1121,21 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "tasks" && (
-        <section className="panel">
+        <section className="card">
           <h2>📋 Daily Task</h2>
-          <div className="form-grid admin-create-grid">
+          <div className="row-auto">
             <input placeholder="Title" value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} />
             <input placeholder="Topic" value={task.topic} onChange={(e) => setTask({ ...task, topic: e.target.value })} />
             <select value={task.priority} onChange={(e) => setTask({ ...task, priority: e.target.value })}><option>Low</option><option>Normal</option><option>High</option></select>
             <button className="btn btn-primary" onClick={() => doAction({ action: "addTask", ...task })}>Add Task</button>
           </div>
-          <div className="compact-list">
+          <div className="task-list">
             {(data.tasks || []).map((t: any) => (
-              <div className="compact-row" key={t.id}>
+              <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={t.id}>
                 <strong>{t.title}</strong>
                 <span className="badge">{t.status}</span>
                 <span>{t.assigned_name}</span>
-                <div className="actions">
+                <div className="btn-group">
                   <button className="btn btn-outline" onClick={() => doAction({ action: "taskStatus", id: t.id, status: t.status === "Completed" ? "Open" : "Completed" })}>{t.status === "Completed" ? "Reopen" : "Mark Complete"}</button>
                   <button className="btn btn-outline" onClick={() => {
                     const email = window.prompt("Reassign to (email):", t.assigned_email || "");
@@ -1150,19 +1152,19 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "reports" && (
         <>
-          <section className="panel">
+          <section className="card">
             <h2>📈 Reports</h2>
-            <div className="count-grid">
-              <div className="count-item"><span>Total Appointments</span><strong>{data.appointments?.length || 0}</strong></div>
-              <div className="count-item"><span>Sends Last 7 Days</span><strong>{data.stats?.sendsLast7 || 0}</strong></div>
-              <div className="count-item"><span>Total Costs</span><strong>${Math.round(data.stats?.totalCost || 0)}</strong></div>
-              <div className="count-item"><span>Total Earnings</span><strong>${Math.round(data.stats?.totalEarning || 0)}</strong></div>
+            <div className="row-auto">
+              <div className="stat-card"><div className="stat-num">{data.appointments?.length || 0}</div><div className="stat-label">Total Appointments</div></div>
+              <div className="stat-card"><div className="stat-num">{data.stats?.sendsLast7 || 0}</div><div className="stat-label">Sends Last 7 Days</div></div>
+              <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalCost || 0)}</div><div className="stat-label">Total Costs</div></div>
+              <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalEarning || 0)}</div><div className="stat-label">Total Earnings</div></div>
             </div>
           </section>
 
-          <section className="panel table-wrap">
-            <div className="section-head"><h2>🗂 Recruiter Directory</h2><span className="muted">Click a column header to sort</span></div>
-            {!directory && <div className="muted">Loading...</div>}
+          <section className="card table-wrap">
+            <div className="card-header"><h2>🗂 Recruiter Directory</h2><span className="text-muted">Click a column header to sort</span></div>
+            {!directory && <div className="text-muted">Loading...</div>}
             {directory && (
               <table>
                 <thead>
@@ -1204,28 +1206,28 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "linkbooking" && (
-        <section className="panel">
+        <section className="card">
           <h2>🔗 Link Open vs Booking</h2>
-          <p className="muted">Not built yet — this needs Google Analytics Data API access (property "FranBooking Calendly") that this app doesn't have configured. Waiting on GA4 Viewer access + the Analytics Data API enabled for the service account before this section can be built.</p>
+          <p className="text-muted">Not built yet — this needs Google Analytics Data API access (property "FranBooking Calendly") that this app doesn't have configured. Waiting on GA4 Viewer access + the Analytics Data API enabled for the service account before this section can be built.</p>
         </section>
       )}
 
       {tab === "vendors" && (
-        <section className="panel">
+        <section className="card">
           <h2>🏬 Vendor Management</h2>
-          <p className="muted">Not built yet — a separate, sizeable stage (Vendor/Profile/Order/Issue tracking) not yet scoped.</p>
+          <p className="text-muted">Not built yet — a separate, sizeable stage (Vendor/Profile/Order/Issue tracking) not yet scoped.</p>
         </section>
       )}
 
       {listModal && (
         <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 30 }} onClick={() => setListModal(null)}>
-          <div className="panel" style={{ maxWidth: 380, maxHeight: "70vh", overflowY: "auto", width: "92vw" }} onClick={(e) => e.stopPropagation()}>
-            <div className="section-head"><h2>{listModal.title}</h2><button className="btn btn-outline" onClick={() => setListModal(null)}>Close</button></div>
-            <div className="compact-list">
+          <div className="card" style={{ maxWidth: 380, maxHeight: "70vh", overflowY: "auto", width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header"><h2>{listModal.title}</h2><button className="btn btn-outline" onClick={() => setListModal(null)}>Close</button></div>
+            <div className="task-list">
               {listModal.rows.map((row, idx) => (
-                <div className="compact-row" key={idx}><strong>{row.label}</strong>{row.sub && <span>{row.sub}</span>}</div>
+                <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={idx}><strong>{row.label}</strong>{row.sub && <span>{row.sub}</span>}</div>
               ))}
-              {listModal.rows.length === 0 && <div className="muted">Nothing here.</div>}
+              {listModal.rows.length === 0 && <div className="text-muted">Nothing here.</div>}
             </div>
           </div>
         </div>
@@ -1240,23 +1242,24 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       </button>
 
       {brainstormOpen && (
-        <div className="panel" style={{ position: "fixed", right: 24, bottom: 80, width: 340, maxHeight: "60vh", overflowY: "auto", zIndex: 20 }}>
+        <div className="card" style={{ position: "fixed", right: 24, bottom: 80, width: 340, maxHeight: "60vh", overflowY: "auto", zIndex: 20 }}>
           <h2>Brainstorm with AI</h2>
-          <div className="compact-list">
+          <div className="task-list">
             {chat.map((turn, idx) => (
-              <div className="compact-row" key={idx}>
+              <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={idx}>
                 <strong>{turn.role === "user" ? "You" : "Assistant"}</strong>
                 <span>{turn.text}</span>
               </div>
             ))}
-            {chat.length === 0 && <div className="muted">Ask anything about the business.</div>}
+            {chat.length === 0 && <div className="text-muted">Ask anything about the business.</div>}
           </div>
-          <div className="form-grid">
+          <div className="form-row">
             <textarea placeholder="Ask a question..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} />
             <button className="btn btn-primary" disabled={chatBusy} onClick={sendChat}>Send</button>
           </div>
         </div>
       )}
-    </main>
+      </div>
+    </>
   );
 }

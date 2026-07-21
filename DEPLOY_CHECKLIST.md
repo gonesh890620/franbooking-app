@@ -1,10 +1,36 @@
 # Deploy Checklist — GitHub / Vercel / Supabase
 
-Written after the design-system port + Recruiter rebuild session.
 Work top to bottom. Each step says how to confirm it worked.
 
-Local `.env.local` is already updated with all three missing vars, so
-`npm run dev` works immediately. Everything below is about **live**.
+Local `.env.local` is already populated, so `npm run dev` works immediately.
+Everything below is about **live**.
+
+---
+
+## Folder layout (changed)
+
+The root now contains only the running application. Everything else moved to
+`Archive/`:
+
+```
+app/  components/  lib/  scripts/  supabase/     ← the app
+package.json  tsconfig*.json  next.config.mjs  middleware.ts
+README.md  DEPLOY_CHECKLIST.md                   ← active docs
+Archive/                                         ← local only, git-ignored
+  ├── CREDENTIALS.md            ← every secret, consolidated
+  ├── gas-webapp/               ← GAS reference source (Code.gs + panels)
+  ├── combined-extension/       ← Chrome extension source
+  └── *.md                      ← handoff / context / planning notes
+```
+
+**`Archive/` is ignored wholesale in `.gitignore` and that is deliberate** —
+`Archive/gas-webapp/Code.gs` and `Archive/CREDENTIALS.md` both contain live
+secrets. Do not narrow that rule to specific subfolders, and don't rely on
+git to back Archive up; it lives in OneDrive only.
+
+> Housekeeping: if you see `.fuse_hidden*` files in `app/` or `components/`,
+> they're stale artifacts from editing over the OneDrive mount. They're
+> git-ignored and safe to delete from Explorer.
 
 ---
 
@@ -47,12 +73,13 @@ Vercel does not read `.env.local`. These must be set in the dashboard.
 
 | Name | Value |
 |---|---|
-| `ANTHROPIC_API_KEY` | the `sk-ant-...` value from `gas-webapp/Code.gs` line 8 |
-| `ADMIN_USERNAME` | see `.env.local` (not written here — do not commit credentials) |
-| `ADMIN_PASSWORD` | see `.env.local` (not written here — do not commit credentials) |
+| `ANTHROPIC_API_KEY` | see `Archive/CREDENTIALS.md` |
+| `ADMIN_USERNAME` | see `Archive/CREDENTIALS.md` |
+| `ADMIN_PASSWORD` | see `Archive/CREDENTIALS.md` |
 
-Copy the values out of `.env.local` (already populated) or `Code.gs` — they
-are deliberately not written into this file.
+Values are deliberately not written into this file, because this file **is**
+committed. `Archive/CREDENTIALS.md` (git-ignored) holds all of them in one
+place, and `.env.local` already has them populated for local dev.
 
 ⚠️ **If you use the Vercel CLI instead of the dashboard, quote the password.**
 If it ends in a special character like `$`, it will be eaten by PowerShell/bash
@@ -158,16 +185,60 @@ Then smoke-test in the side panel:
 
 ---
 
+## Design system — now applied to every panel
+
+`app/styles.css` is `gas-webapp/CSS.html` ported verbatim (section 1), plus
+app-only additions written in the same visual language (section 2). **There is
+no longer a compatibility/alias layer** — every panel was converted to real GAS
+class names, so the aliases were deleted.
+
+Converted this session: Admin, Operations, Agent, Client, Growth, both login
+screens, the home page, the error page, RoleGate and WorkspaceDashboard.
+Recruiter was rebuilt in the previous session.
+
+Shared primitives live in `components/ui.tsx` (`AppHeader`, `Card`, `StatGrid`,
+`Tabs`, `Msg`, `Badge`, `DataTable`, `Modal`, `Field`, `BarChart`,
+`Collapsible`). **Compose these rather than inventing new class names** — that
+divergence is exactly what made the app stop looking like GAS the first time.
+
+Layout is applied per route via `components/BodyClass.tsx`, replacing GAS's
+hardcoded `<body class="full-page">`:
+
+| Panel | Body class | Width |
+|---|---|---|
+| Growth, Operations, Admin, Client | `full-page wide-page` | 1320px |
+| Recruiter, Agent | `full-page narrow-page` | 760px, single column |
+
+Recruiter and Agent stay narrow because in GAS they rendered in the ~400px
+extension side panel — their workflow is a vertical column, and stretching it
+into a wide dashboard would change how the work actually flows.
+
+Verify after deploying: every panel should be `#6c2eb9` purple on `#f5f5f7`,
+system font, with the sticky white `.app-header` and underline-style tabs —
+not the old Arial / `#5b21b6` / bordered-pill look.
+
+---
+
 ## What is not done
 
-- **Growth panel** is unchanged apart from inheriting the ported design system.
-  `Growth.html` is 5,456 lines: 8 sections, ~60 endpoints, ~25 modal types.
-  Stage 1 (pinned block + Recruiters) exists from an earlier session. Client
-  Tracker, Reports, Finance + Recruiter Payments, Daily Task + Recurring,
-  Vendor Management and the GA4 "Link Open vs Booking" section remain.
-- **Operations / Admin / Agent / Client** still use the temporary
-  compatibility CSS aliases rather than real GAS class names and DOM
-  structure. They now look close; they are not structurally ported.
+- **Growth panel functionality.** Its *styling* is now GAS-accurate, and
+  coverage is partial. `Growth.html` is 5,456 lines: 8 sections, ~60
+  endpoints, ~25 modal types.
+
+  | Section | State |
+  |---|---|
+  | Pinned block (Client Status + Appointments) | done |
+  | Recruiters (+ drilldowns, online/leave, nurture-FU stats) | done |
+  | Client Tracker (Add/Update/Archive, Mark Ledger Sent, Ledger CSV, Wait List, slot/vacation checks) | done |
+  | Reports | partial — Recruiter Directory only; the 3 GAS sub-tabs are missing |
+  | Finance | partial — Add Cost / Add Client Payment only; **Recruiter Payments + Wise workflow missing** |
+  | Daily Task | partial — add/status/reassign only; **recurring tasks missing** |
+  | Vendor Management | **not started** — profiles, vendors, orders, issues, comms, feedback, replace/renew (9 modals) |
+  | Link Open vs Booking (GA4) | **not started** — blocked on access, see below |
+- **Operations / Admin / Agent / Client** are visually ported and use the real
+  GAS design vocabulary, but they were not re-derived section-by-section
+  against their GAS source the way Recruiter was. Expect missing edge-case
+  flows rather than missing styling.
 - **GA4 access** for "Link Open vs Booking" is still blocked pending: grant
   `claude@claude-automation-497715.iam.gserviceaccount.com` Viewer on GA4
   property `543445631`, and enable the Google Analytics Data API on project

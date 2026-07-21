@@ -1,5 +1,9 @@
 .next/
 node_modules/
+
+# Stale inode artifacts left by in-place edits over a network/FUSE mount
+# (OneDrive). Safe to delete from Explorer whenever you see them.
+.fuse_hidden*
 .env
 .env.local
 .env.*.local
@@ -8,7 +12,18 @@ vercel/
 dist/
 coverage/
 
-# Legacy source contains live API keys/admin credentials in the current local
-# copy. Keep it local until secrets are rotated or the files are sanitized.
+# ── ARCHIVE ─────────────────────────────────────────────────────────────────
+# Local-only reference material moved out of the working tree. This is ignored
+# WHOLESALE and deliberately so: Archive/gas-webapp/Code.gs contains the live
+# Anthropic API key and the shared admin credentials, and
+# Archive/CREDENTIALS.md consolidates every secret in the project.
+#
+# Do not narrow this rule to specific subfolders. Anything dropped into
+# Archive/ must stay off GitHub by default — that is the whole point of the
+# folder. Archive/ is NOT backed up by git; it lives in OneDrive only.
+Archive/
+
+# Legacy source (now under Archive/) contains live API keys and admin
+# credentials. Kept as a safety net in case a copy is restored to the root.
 gas-webapp/
 combined-extension/

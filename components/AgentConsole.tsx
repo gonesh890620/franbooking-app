@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { firstName, scriptText } from "@/lib/agentScripts";
+import BodyClass from "./BodyClass";
+import { AppHeader } from "./ui";
 
 type Answers = Record<string, string>;
 
@@ -17,10 +19,12 @@ function ScriptBlock({ label, text }: { label: string; text: string }) {
     }
   }
   return (
-    <div className="compact-row" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-      <strong>{label}</strong>
-      <div className="reply-box" style={{ whiteSpace: "pre-wrap" }}>{text}</div>
-      <button type="button" className="btn btn-outline" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+    <div className="form-row">
+      <label>{label}</label>
+      <div className="reply-box">{text}</div>
+      <button type="button" className="btn btn-copy btn-sm mt-8" onClick={copy}>
+        {copied ? "✓ Copied" : "📋 Copy"}
+      </button>
     </div>
   );
 }
@@ -86,59 +90,83 @@ export default function AgentConsole({ session, initial, loadError }: { session:
   const liCheckResult = answers.liCheckResult || "Pending";
 
   return (
-    <main className="app-shell wide">
-      <div className="topbar">
-        <div className="topbar-title">
-          <div className="brand">Franbooking</div>
-          <h1>Agent Panel</h1>
-          <div className="muted">{session.name} | {session.email}</div>
-        </div>
-        <button className="btn btn-outline" onClick={reload}>Refresh</button>
-      </div>
-      {loadError && <div className="notice error">Agent data failed to load: {loadError}</div>}
-      {message && <div className="notice success">{message}</div>}
+    <>
+      <BodyClass names="full-page narrow-page" />
 
-      <section className="grid two">
-        <div className="panel">
-          <h2>My Applicants</h2>
-          <div className="compact-list">
-            {(data.applicants || []).map((a: any) => (
-              <button key={a.id} className="compact-row compact-button" onClick={() => { setSelectedId(a.id); setMessage(""); }}>
-                <strong>{a.name}</strong>
-                <span>{a.status} | {a.platform}</span>
-              </button>
-            ))}
+      <AppHeader logo="🎧 Agent" user={`${session.name} | ${session.email}`}>
+        <button className="btn btn-ghost btn-sm" onClick={reload}>
+          ↻ Refresh
+        </button>
+      </AppHeader>
+
+      <div className="screen-content">
+        {loadError ? <div className="msg msg-error">Agent data failed to load: {loadError}</div> : null}
+        {message ? <div className="msg msg-success">{message}</div> : null}
+
+        <div className="card">
+          <div className="card-header">
+            <h2>My Applicants</h2>
+            <span className="badge badge-gray">{(data.applicants || []).length}</span>
           </div>
+          {!(data.applicants || []).length ? (
+            <p className="text-muted text-center" style={{ padding: 12 }}>
+              No applicants assigned to you yet.
+            </p>
+          ) : (
+            (data.applicants || []).map((a: any) => (
+              <div
+                key={a.id}
+                className="task-item"
+                style={{
+                  cursor: "pointer",
+                  border: a.id === selectedId ? "1.5px solid #6c2eb9" : "1.5px solid transparent"
+                }}
+                onClick={() => {
+                  setSelectedId(a.id);
+                  setMessage("");
+                }}
+              >
+                <div className="task-name">{a.name}</div>
+                <div className="task-meta">
+                  {a.status} · {a.platform}
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <div className="panel">
-          <div className="section-head">
+        <div className="card">
+          <div className="card-header">
             <h2>{selected?.name || "Applicant"}</h2>
-            <div className="tabs">
-              <button className={`tab ${lang === "en" ? "active" : ""}`} onClick={() => setLang("en")}>EN</button>
-              <button className={`tab ${lang === "ph" ? "active" : ""}`} onClick={() => setLang("ph")}>PH</button>
+            <div className="type-toggle" style={{ width: 120 }}>
+              <button className={`t-btn${lang === "en" ? " active" : ""}`} onClick={() => setLang("en")}>
+                EN
+              </button>
+              <button className={`t-btn${lang === "ph" ? " active" : ""}`} onClick={() => setLang("ph")}>
+                PH
+              </button>
             </div>
           </div>
 
-          {!selected && <p className="muted">No applicant selected.</p>}
+          {!selected && <p className="text-muted">No applicant selected.</p>}
 
           {selected && (
-            <div className="form-grid">
+            <div className="form-row">
               <label>LinkedIn Profile<input defaultValue={selected.linkedin_url || ""} onBlur={(e) => action({ action: "updateApplicantLink", applicantId: selected.id, liProfile: e.target.value }).then(reload)} /></label>
 
-              <div className="panel">
+              <div className="card">
                 <div className="task-name">Step 1 — Create Group</div>
                 <div className="reply-box">{script("groupInstruction")}</div>
                 <label><span><input type="checkbox" checked={answers.groupCreated === "Yes"} onChange={(e) => set("groupCreated", e.target.checked ? "Yes" : "")} /> Group Created</span></label>
               </div>
 
-              <div className="panel">
+              <div className="card">
                 <div className="task-name">Step 2 — Thank You &amp; Schedule the Call</div>
                 <ScriptBlock label="Message to send" text={script("thankYouAvailability")} />
                 <label><span><input type="checkbox" checked={answers.thankYouSent === "Yes"} onChange={(e) => set("thankYouSent", e.target.checked ? "Yes" : "")} /> Thank You Sent</span></label>
                 <label><span><input type="checkbox" checked={answers.availabilityAsked === "Yes"} onChange={(e) => set("availabilityAsked", e.target.checked ? "Yes" : "")} /> Availability Asked</span></label>
                 <label>Call Mode
-                  <span className="actions" style={{ display: "inline-flex", marginLeft: 8 }}>
+                  <span className="btn-group" style={{ display: "inline-flex", marginLeft: 8 }}>
                     <button type="button" className={`btn ${answers.callMode !== "Instant" ? "btn-primary" : "btn-outline"}`} onClick={() => set("callMode", "Scheduled")}>Scheduled</button>
                     <button type="button" className={`btn ${answers.callMode === "Instant" ? "btn-primary" : "btn-outline"}`} onClick={() => set("callMode", "Instant")}>Starting Now</button>
                   </span>
@@ -148,7 +176,7 @@ export default function AgentConsole({ session, initial, loadError }: { session:
                 )}
               </div>
 
-              <div className="panel">
+              <div className="card">
                 <div className="task-name">Step 3 — Run the Call</div>
                 <ScriptBlock label="Opening" text={script("intro")} />
                 <ScriptBlock label="If asked — Company" text={script("company")} />
@@ -166,7 +194,7 @@ export default function AgentConsole({ session, initial, loadError }: { session:
                 <label><span><input type="checkbox" checked={answers.callCompleted === "Yes"} onChange={(e) => set("callCompleted", e.target.checked ? "Yes" : "")} /> Call Completed</span></label>
               </div>
 
-              <div className="panel">
+              <div className="card">
                 <div className="task-name">Step 4 — Pre-Screening Answers</div>
                 <label>LI Restriction Concern?<select value={answers.liRestrictionConcern || ""} onChange={(e) => set("liRestrictionConcern", e.target.value)}><option value=""></option><option>Yes</option><option>No</option></select></label>
                 <label>Connections<input type="number" min={0} value={answers.connectionsCount || ""} onChange={(e) => set("connectionsCount", e.target.value)} /></label>
@@ -177,20 +205,20 @@ export default function AgentConsole({ session, initial, loadError }: { session:
                 <label>Best Working Time<input placeholder="e.g. 9am-5pm EST" value={answers.bestWorkingTime || ""} onChange={(e) => set("bestWorkingTime", e.target.value)} /></label>
               </div>
 
-              <div className="panel">
+              <div className="card">
                 <div className="task-name">Step 5 — Outcome</div>
                 <label>Call Outcome<select value={outcome} onChange={(e) => set("callOutcome", e.target.value)}><option>Pending</option><option>Interested</option><option>Not Interested</option></select></label>
-                {interested && <div className="notice success">Interested — continue with the Onboarding step below.</div>}
-                {outcome === "Not Interested" && <div className="notice warn">Marked Not Interested — no further action needed.</div>}
+                {interested && <div className="msg msg-success">Interested — continue with the Onboarding step below.</div>}
+                {outcome === "Not Interested" && <div className="msg msg-warn">Marked Not Interested — no further action needed.</div>}
                 <label>Notes<textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
               </div>
 
               {interested && (
-                <div className="panel">
+                <div className="card">
                   <div className="task-name">Step 6 — Onboarding</div>
                   <label>LI Profile Updated Correctly?<select value={liCheckResult} onChange={(e) => set("liCheckResult", e.target.value)}><option>Pending</option><option>Passed</option><option>Failed</option></select></label>
-                  {liCheckResult === "Failed" && <div className="notice error">LI check failed — this applicant should be marked Disqualified. No further onboarding needed.</div>}
-                  {liCheckResult !== "Passed" && liCheckResult !== "Failed" && <div className="notice warn">Re-check the LI profile/banner update before continuing.</div>}
+                  {liCheckResult === "Failed" && <div className="msg msg-error">LI check failed — this applicant should be marked Disqualified. No further onboarding needed.</div>}
+                  {liCheckResult !== "Passed" && liCheckResult !== "Failed" && <div className="msg msg-warn">Re-check the LI profile/banner update before continuing.</div>}
                   {liCheckResult === "Passed" && (
                     <>
                       <ScriptBlock label="Send SOP" text={script("sopMessage")} />
@@ -208,7 +236,7 @@ export default function AgentConsole({ session, initial, loadError }: { session:
                       <label><span><input type="checkbox" checked={answers.sendsVerified === "Yes"} onChange={(e) => set("sendsVerified", e.target.checked ? "Yes" : "")} /> Sends Verified</span></label>
                       {answers.sendsVerified === "Yes" && (
                         selected.status === "Hired"
-                          ? <div className="notice success">Hired!</div>
+                          ? <div className="msg msg-success">Hired!</div>
                           : <button type="button" className="btn btn-primary" onClick={markHired}>Mark Hired</button>
                       )}
                     </>
@@ -216,13 +244,15 @@ export default function AgentConsole({ session, initial, loadError }: { session:
                 </div>
               )}
 
-              <div className="actions">
-                <button className="btn btn-primary" onClick={save}>Save Checklist</button>
+              <div className="btn-group mt-12">
+                <button className="btn btn-primary btn-full" onClick={save}>
+                  💾 Save Checklist
+                </button>
               </div>
             </div>
           )}
         </div>
-      </section>
-    </main>
+      </div>
+    </>
   );
 }

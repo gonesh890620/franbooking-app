@@ -53,23 +53,38 @@ export default function AccessLogin() {
 
   return (
     <main className="login-shell">
-      <section className="login-card">
-        <div className="brand">Franbooking</div>
+      <form
+        className="login-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void login();
+        }}
+      >
+        <div className="app-logo">Franbooking</div>
         <h1>Login</h1>
         <p>Use your Access Control email and password.</p>
-        <div className="form-grid">
-          <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          <button className="btn btn-primary" disabled={loading} onClick={login}>Login</button>
+
+        <div className="form-row">
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
-        {statusInfo && (
-          <div className="notice warn">
+        <div className="form-row">
+          <label>Password</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+
+        <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
+          {loading ? "Signing in…" : "Login"}
+        </button>
+
+        {statusInfo ? (
+          <div className="msg msg-warn">
             <strong>{statusInfo.title}</strong>
             <div>{statusInfo.body}</div>
           </div>
-        )}
-        {message && <div className="notice error">{message}</div>}
-      </section>
+        ) : null}
+        {message ? <div className="msg msg-error">{message}</div> : null}
+      </form>
     </main>
   );
 }

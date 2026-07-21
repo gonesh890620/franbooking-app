@@ -1,6 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import BodyClass from "./BodyClass";
+import {
+  AppHeader,
+  Badge,
+  Card,
+  DataTable,
+  EmptyRow,
+  Field,
+  Loading,
+  Msg,
+  StatGrid,
+  statusTone,
+  Tabs,
+  toneForMessage
+} from "./ui";
 
 type AdminConsoleProps = {
   session: { name: string; email: string };
@@ -160,67 +175,80 @@ export default function AdminConsole({ session, counts, users, loadError }: Admi
   }
 
   return (
-    <main className="app-shell wide">
-      <div className="topbar">
-        <div className="topbar-title">
-          <div className="brand">Franbooking</div>
-          <h1>Admin Console</h1>
-          <div className="muted">{session.name} | {session.email}</div>
-        </div>
-        <button className="btn btn-outline" onClick={logout}>Logout</button>
-      </div>
+    <>
+      <BodyClass names="full-page wide-page" />
 
-      <section className="metric-grid">
-        <div className="metric"><span>Total Users</span><strong>{rows.length}</strong></div>
-        <div className="metric"><span>Approved Users</span><strong>{activeUsers}</strong></div>
-        <div className="metric"><span>Pending Approval</span><strong>{pendingUsers.length}</strong></div>
-        <div className="metric"><span>Recruiters</span><strong>{recruiters}</strong></div>
-      </section>
+      <AppHeader logo="⚙️ Admin" user={`${session.name} | ${session.email}`}>
+        <button className="btn btn-ghost btn-sm" onClick={logout}>
+          Logout
+        </button>
+      </AppHeader>
 
-      {loadError && <div className="notice error">{loadError}</div>}
-      {message && <div className={message.toLowerCase().includes("failed") || message.toLowerCase().includes("missing") || message.toLowerCase().includes("invalid") ? "notice error" : "notice success"}>{message}</div>}
+      <Tabs
+        value={view}
+        onChange={(next) => {
+          if (next === "staff") void openStaffReport();
+          else if (next === "activity") void openActivityLog();
+          else setView(next);
+        }}
+        tabs={[
+          { key: "users", label: "👥 Users" },
+          { key: "add", label: "➕ Add User" },
+          { key: "staff", label: "📊 Staff Report" },
+          { key: "activity", label: "📋 Activity Log" }
+        ]}
+      />
 
-      {credential && (
-        <div className="notice success">
-          <div><strong>Credentials for {credential.email}</strong></div>
-          <div>Password: <code>{credential.password}</code></div>
-          <div className="actions" style={{ marginTop: 8 }}>
-            <button className="btn btn-outline" onClick={copyCredential}>Copy</button>
-            <button className="btn btn-outline" onClick={() => setCredential(null)}>Dismiss</button>
-          </div>
-        </div>
-      )}
+      <div className="screen-content">
+        <StatGrid
+          stats={[
+            { label: "Total Users", value: rows.length },
+            { label: "Approved Users", value: activeUsers, tone: "green" },
+            { label: "Pending Approval", value: pendingUsers.length, tone: "amber" },
+            { label: "Recruiters", value: recruiters, tone: "blue" }
+          ]}
+        />
 
-      <div className="tabs" style={{ marginTop: 14 }}>
-        <button className={`tab ${view === "users" ? "active" : ""}`} onClick={() => setView("users")}>Users</button>
-        <button className={`tab ${view === "add" ? "active" : ""}`} onClick={() => setView("add")}>Add User</button>
-        <button className={`tab ${view === "staff" ? "active" : ""}`} onClick={openStaffReport}>Staff Report</button>
-        <button className={`tab ${view === "activity" ? "active" : ""}`} onClick={openActivityLog}>Activity Log</button>
-      </div>
+        {loadError ? <Msg kind="error">{loadError}</Msg> : null}
+        {message ? <Msg kind={toneForMessage(message)}>{message}</Msg> : null}
 
-      {view === "users" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Access Control</h2>
-            <span className="badge">{rows.length} users</span>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Expires</th>
-                  <th>Referred By</th>
-                  <th>Credits</th>
-                  <th>Sheet</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((user) => {
+        {credential ? (
+          <Card>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Credentials for {credential.email}</div>
+            <div className="reply-box">
+              Email: {credential.email}
+              {"\n"}Password: {credential.password}
+            </div>
+            <div className="btn-group mt-8">
+              <button className="btn btn-copy btn-sm" onClick={copyCredential}>
+                📋 Copy
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setCredential(null)}>
+                Dismiss
+              </button>
+            </div>
+          </Card>
+        ) : null}
+
+        {view === "users" ? (
+          <Card title="Access Control" actions={<Badge>{rows.length} users</Badge>}>
+            <DataTable
+              head={[
+                { label: "Name" },
+                { label: "Email" },
+                { label: "Role" },
+                { label: "Status" },
+                { label: "Expires" },
+                { label: "Referred By" },
+                { label: "Credits" },
+                { label: "Sheet" },
+                { label: "Actions" }
+              ]}
+            >
+              {!rows.length ? (
+                <EmptyRow colSpan={9}>No users yet.</EmptyRow>
+              ) : (
+                rows.map((user) => {
                   const status = String(user.status || "").toLowerCase();
                   return (
                     <tr key={String(user.id || user.email)}>
@@ -228,122 +256,160 @@ export default function AdminConsole({ session, counts, users, loadError }: Admi
                       <td>{user.email}</td>
                       <td>{user.legacy_type || user.role}</td>
                       <td>
-                        {user.status}
-                        {status === "removed" && user.remove_reason && <div className="muted">{user.remove_reason}</div>}
+                        <Badge tone={statusTone(status)}>{user.status}</Badge>
+                        {status === "removed" && user.remove_reason ? (
+                          <div className="text-muted">{user.remove_reason}</div>
+                        ) : null}
                       </td>
                       <td>{user.expires_at || "-"}</td>
                       <td>{user.referred_by || "-"}</td>
                       <td>
-                        N {user.credits?.nurture_balance ?? 0} / O {user.credits?.outreach_balance ?? 0} / P {user.credits?.profile_balance ?? 0}
+                        N {user.credits?.nurture_balance ?? 0} / O {user.credits?.outreach_balance ?? 0} / P{" "}
+                        {user.credits?.profile_balance ?? 0}
                       </td>
                       <td>{user.legacy_sheet_id ? "Linked" : "-"}</td>
                       <td>
-                        <div className="actions">
-                          {status === "pending" && <button className="btn btn-primary" onClick={() => approveUser(user.email)}>Approve</button>}
-                          <button className="btn btn-outline" onClick={() => topup(user.email)}>Top Up</button>
-                          <button className="btn btn-outline" onClick={() => resetPassword(user.email)}>Reset PW</button>
-                          {status === "removed" || status === "expired"
-                            ? <button className="btn btn-primary" onClick={() => restoreUser(user.email)}>Restore</button>
-                            : <button className="btn btn-danger" onClick={() => removeUser(user.email)}>Remove</button>}
+                        <div className="btn-group">
+                          {status === "pending" ? (
+                            <button className="btn btn-primary btn-sm" onClick={() => approveUser(user.email)}>
+                              Approve
+                            </button>
+                          ) : null}
+                          <button className="btn btn-outline btn-sm" onClick={() => topup(user.email)}>
+                            Top Up
+                          </button>
+                          <button className="btn btn-outline btn-sm" onClick={() => resetPassword(user.email)}>
+                            Reset PW
+                          </button>
+                          {status === "removed" || status === "expired" ? (
+                            <button className="btn btn-primary btn-sm" onClick={() => restoreUser(user.email)}>
+                              Restore
+                            </button>
+                          ) : (
+                            <button className="btn btn-danger btn-sm" onClick={() => removeUser(user.email)}>
+                              Remove
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+                })
+              )}
+            </DataTable>
+          </Card>
+        ) : null}
 
-      {view === "add" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Add User</h2>
-            <span className="badge">Supabase</span>
-          </div>
-          <div className="form-grid admin-create-grid">
-            <label>Email<input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} /></label>
-            <label>Name<input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} /></label>
-            <label>Type<select value={newUser.type} onChange={(e) => setNewUser({ ...newUser, type: e.target.value })}><option>PH</option><option>Inhouse</option><option>BD</option><option>growth</option><option>operations</option><option>agent</option><option>client</option><option>admin</option></select></label>
-            <label>Password (blank = auto-generate)<input value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} /></label>
-            <label>Sheet ID<input value={newUser.sheetId} onChange={(e) => setNewUser({ ...newUser, sheetId: e.target.value })} /></label>
-            <label>Referred By (email)<input value={newUser.referredBy} onChange={(e) => setNewUser({ ...newUser, referredBy: e.target.value })} /></label>
-            <label>N Limit<input value={newUser.nLimit} onChange={(e) => setNewUser({ ...newUser, nLimit: e.target.value })} /></label>
-            <label>O Limit<input value={newUser.oLimit} onChange={(e) => setNewUser({ ...newUser, oLimit: e.target.value })} /></label>
-            <label>P Limit<input value={newUser.pLimit} onChange={(e) => setNewUser({ ...newUser, pLimit: e.target.value })} /></label>
-            <button className="btn btn-primary" onClick={createUser}>Create / Update User</button>
-          </div>
-        </section>
-      )}
-
-      {view === "staff" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Staff Report</h2>
-            <span className="badge">Ever approved vs. currently active</span>
-          </div>
-          {loading && !staffReport && <div className="muted">Loading...</div>}
-          {staffReport && (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Role</th><th>Ever Approved</th><th>Currently Active</th></tr></thead>
-                <tbody>
-                  {staffReport.roleOrder.map((role) => (
-                    <tr key={role}>
-                      <td>{role}</td>
-                      <td>{staffReport.roles[role]?.approvedBefore ?? 0}</td>
-                      <td>{staffReport.roles[role]?.currentActive ?? 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {view === "add" ? (
+          <Card title="Add User" actions={<Badge tone="gray">Supabase</Badge>}>
+            <div className="row-auto">
+              <Field label="Email">
+                <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
+              </Field>
+              <Field label="Name">
+                <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} />
+              </Field>
+              <Field label="Type">
+                <select value={newUser.type} onChange={(e) => setNewUser({ ...newUser, type: e.target.value })}>
+                  <option>PH</option>
+                  <option>Inhouse</option>
+                  <option>BD</option>
+                  <option>growth</option>
+                  <option>operations</option>
+                  <option>agent</option>
+                  <option>client</option>
+                  <option>admin</option>
+                </select>
+              </Field>
+              <Field label="Password" hint="blank = auto-generate">
+                <input value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
+              </Field>
+              <Field label="Sheet ID">
+                <input value={newUser.sheetId} onChange={(e) => setNewUser({ ...newUser, sheetId: e.target.value })} />
+              </Field>
+              <Field label="Referred By" hint="email">
+                <input
+                  value={newUser.referredBy}
+                  onChange={(e) => setNewUser({ ...newUser, referredBy: e.target.value })}
+                />
+              </Field>
+              <Field label="N Limit">
+                <input value={newUser.nLimit} onChange={(e) => setNewUser({ ...newUser, nLimit: e.target.value })} />
+              </Field>
+              <Field label="O Limit">
+                <input value={newUser.oLimit} onChange={(e) => setNewUser({ ...newUser, oLimit: e.target.value })} />
+              </Field>
+              <Field label="P Limit">
+                <input value={newUser.pLimit} onChange={(e) => setNewUser({ ...newUser, pLimit: e.target.value })} />
+              </Field>
             </div>
-          )}
-        </section>
-      )}
+            <button className="btn btn-primary mt-8" onClick={createUser}>
+              Create / Update User
+            </button>
+          </Card>
+        ) : null}
 
-      {view === "activity" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Activity Log</h2>
-            <span className="badge">{activity ? `Total AI cost: $${activity.totalCost.toFixed(2)}` : "Loading"}</span>
-          </div>
-          {loading && !activity && <div className="muted">Loading...</div>}
-          {activity && (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead>
-                <tbody>
-                  {activity.activities.map((entry) => (
+        {view === "staff" ? (
+          <Card title="Staff Report" actions={<Badge tone="gray">Ever approved vs. currently active</Badge>}>
+            {loading && !staffReport ? (
+              <Loading />
+            ) : staffReport ? (
+              <DataTable
+                head={[{ label: "Role" }, { label: "Ever Approved" }, { label: "Currently Active" }]}
+              >
+                {staffReport.roleOrder.map((role) => (
+                  <tr key={role}>
+                    <td>{role}</td>
+                    <td>{staffReport.roles[role]?.approvedBefore ?? 0}</td>
+                    <td>{staffReport.roles[role]?.currentActive ?? 0}</td>
+                  </tr>
+                ))}
+              </DataTable>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {view === "activity" ? (
+          <Card
+            title="Activity Log"
+            actions={
+              <Badge tone={activity ? "green" : "gray"}>
+                {activity ? `Total AI cost: $${activity.totalCost.toFixed(2)}` : "Loading"}
+              </Badge>
+            }
+          >
+            {loading && !activity ? (
+              <Loading />
+            ) : activity ? (
+              <DataTable head={[{ label: "When" }, { label: "Actor" }, { label: "Action" }, { label: "Details" }]}>
+                {!activity.activities.length ? (
+                  <EmptyRow colSpan={4}>No activity recorded.</EmptyRow>
+                ) : (
+                  activity.activities.map((entry) => (
                     <tr key={String(entry.id)}>
                       <td>{new Date(entry.created_at).toLocaleString()}</td>
                       <td>{entry.actor_email}</td>
                       <td>{entry.action}</td>
                       <td>{typeof entry.details === "string" ? entry.details : JSON.stringify(entry.details)}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
+                  ))
+                )}
+              </DataTable>
+            ) : null}
+          </Card>
+        ) : null}
 
-      <section className="panel">
-        <div className="section-head">
-          <h2>Database</h2>
-          <span className="badge">Supabase</span>
-        </div>
-        <div className="count-grid">
-          {counts.map((item) => (
-            <div className="count-item" key={item.table}>
-              <span>{item.label}</span>
-              <strong>{item.count}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
+        <Card title="Database" actions={<Badge tone="gray">Supabase</Badge>}>
+          <div className="row-auto">
+            {counts.map((item) => (
+              <div className="stat-card" key={item.table}>
+                <div className="stat-num">{item.count}</div>
+                <div className="stat-label">{item.label}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </>
   );
 }

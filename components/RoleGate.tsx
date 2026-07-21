@@ -14,12 +14,12 @@ export default function RoleGate({
   if (!session) {
     return (
       <main className="login-shell">
-        <section className="login-card">
-          <div className="brand">Franbooking</div>
+        <div className="login-card">
+          <div className="app-logo">Franbooking</div>
           <h1>{title}</h1>
           <p>Please log in first.</p>
-          <Link className="primary-link" href="/login">Go to Login</Link>
-        </section>
+          <Link className="btn btn-primary btn-full" style={{ textDecoration: "none", marginTop: 12 }} href="/login">Go to Login</Link>
+        </div>
       </main>
     );
   }
@@ -27,12 +27,12 @@ export default function RoleGate({
   if (!canOpenRole(session, role)) {
     return (
       <main className="login-shell">
-        <section className="login-card">
-          <div className="brand">Franbooking</div>
+        <div className="login-card">
+          <div className="app-logo">Franbooking</div>
           <h1>Access Denied</h1>
           <p>Your account is not approved for this workspace.</p>
-          <Link className="primary-link" href="/login">Switch Account</Link>
-        </section>
+          <Link className="btn btn-primary btn-full" style={{ textDecoration: "none", marginTop: 12 }} href="/login">Switch Account</Link>
+        </div>
       </main>
     );
   }

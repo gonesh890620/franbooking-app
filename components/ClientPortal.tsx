@@ -1,24 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-
-function BarChart({ rows, labelKey, valueKey }: { rows: Array<Record<string, any>>; labelKey: string; valueKey: string }) {
-  const max = Math.max(1, ...rows.map((r) => Number(r[valueKey]) || 0));
-  return (
-    <div className="compact-list">
-      {rows.map((r) => (
-        <div className="compact-row" key={r[labelKey]}>
-          <strong style={{ minWidth: 90, display: "inline-block" }}>{r[labelKey]}</strong>
-          <span style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ background: "var(--accent, #6c2eb9)", opacity: 0.75, height: 10, borderRadius: 6, width: `${Math.max(4, (Number(r[valueKey]) / max) * 100)}%` }} />
-            <span>{r[valueKey]}</span>
-          </span>
-        </div>
-      ))}
-      {rows.length === 0 && <div className="muted">No data yet.</div>}
-    </div>
-  );
-}
+import BodyClass from "./BodyClass";
+import { AppHeader, Badge, BarChart, Card, DataTable, EmptyRow, Field, Msg, StatGrid, Tabs } from "./ui";
 
 export default function ClientPortal({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
@@ -66,85 +50,129 @@ export default function ClientPortal({ session, initial, loadError }: { session:
   }
 
   return (
-    <main className="app-shell wide">
-      <div className="topbar">
-        <div className="topbar-title">
-          <div className="brand">Franbooking</div>
-          <h1>Client Portal</h1>
-          <div className="muted">{session.name} | {session.email}</div>
-        </div>
-        <button className="btn btn-outline" onClick={reload}>Refresh</button>
-      </div>
-      {loadError && <div className="notice error">Client data failed to load: {loadError}</div>}
-      <div className="tabs">
-        <button className={`tab ${tab === "dashboard" ? "active" : ""}`} onClick={() => setTab("dashboard")}>Dashboard</button>
-        <button className={`tab ${tab === "leads" ? "active" : ""}`} onClick={() => setTab("leads")}>Leads</button>
-      </div>
+    <>
+      <BodyClass names="full-page wide-page" />
 
-      {tab === "dashboard" && (
-        <>
-          <section className="metric-grid">
-            <div className="metric"><span>Campaign</span><strong>{data.stats?.campaignName || "-"}</strong></div>
-            <div className="metric"><span>Total Appts</span><strong>{data.stats?.totalAppts || 0}</strong></div>
-            <div className="metric"><span>Last 7</span><strong>{data.stats?.last7 || 0}</strong></div>
-            <div className="metric"><span>CA/NY</span><strong>{data.stats?.canyPct || 0}%</strong></div>
-          </section>
-          <section className="grid two">
-            <div className="panel">
-              <h2>Growth (last 14 days)</h2>
+      <AppHeader logo="📈 Client Portal" user={`${session.name} | ${session.email}`}>
+        <button className="btn btn-ghost btn-sm" onClick={reload}>
+          ↻ Refresh
+        </button>
+      </AppHeader>
+
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { key: "dashboard", label: "📊 Dashboard" },
+          { key: "leads", label: "👤 Leads" }
+        ]}
+      />
+
+      <div className="screen-content">
+        {loadError ? <Msg kind="error">Client data failed to load: {loadError}</Msg> : null}
+
+        {tab === "dashboard" ? (
+          <>
+            <StatGrid
+              stats={[
+                { label: "Campaign", value: data.stats?.campaignName || "-", tone: "purple" },
+                { label: "Total Appts", value: data.stats?.totalAppts || 0, tone: "green" },
+                { label: "Last 7 Days", value: data.stats?.last7 || 0, tone: "blue" },
+                { label: "CA/NY", value: `${data.stats?.canyPct || 0}%`, tone: "amber" }
+              ]}
+            />
+            <Card title="Growth (last 14 days)">
               <BarChart rows={(data.growth || []).slice(-14)} labelKey="date" valueKey="count" />
-            </div>
-            <div className="panel">
-              <h2>States</h2>
+            </Card>
+            <Card title="States">
               <BarChart rows={(data.states || []).slice(0, 12)} labelKey="state" valueKey="count" />
-            </div>
-          </section>
-        </>
-      )}
+            </Card>
+          </>
+        ) : null}
 
-      {tab === "leads" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Leads</h2>
-            <button className="btn btn-outline" onClick={exportCSV}>Export CSV</button>
-          </div>
-          <div className="form-grid admin-create-grid">
-            <input placeholder="Search leads" value={q} onChange={(e) => setQ(e.target.value)} />
-            <select value={cycle} onChange={(e) => setCycle(e.target.value)}>
-              <option value="">All Cycles</option>
-              {(data.cycles || []).map((c: string) => <option key={c} value={c}>{c === "current" ? "Current Cycle" : `Cycle ${c}`}</option>)}
-            </select>
-            <label>From<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label>
-            <label>To<input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
-            <button className="btn btn-outline" onClick={clearFilters}>Clear Filters</button>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Name</th><th>Email</th><th>Company</th><th>Location</th><th>Recruiter</th><th>Tags</th></tr></thead>
-              <tbody>
-                {leads.map((l: any) => (
+        {tab === "leads" ? (
+          <Card
+            title="Leads"
+            actions={
+              <>
+                <Badge tone="gray">{leads.length} shown</Badge>
+                <button className="btn btn-outline btn-sm" onClick={exportCSV}>
+                  ⬇ Export CSV
+                </button>
+              </>
+            }
+          >
+            <div className="row-auto">
+              <Field label="Search">
+                <input placeholder="Name, email, company, location…" value={q} onChange={(e) => setQ(e.target.value)} />
+              </Field>
+              <Field label="Cycle">
+                <select value={cycle} onChange={(e) => setCycle(e.target.value)}>
+                  <option value="">All Cycles</option>
+                  {(data.cycles || []).map((c: string) => (
+                    <option key={c} value={c}>
+                      {c === "current" ? "Current Cycle" : `Cycle ${c}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="From">
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </Field>
+              <Field label="To">
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </Field>
+            </div>
+            <button className="btn btn-ghost btn-sm mb-8" onClick={clearFilters}>
+              Clear Filters
+            </button>
+
+            <DataTable
+              head={[
+                { label: "Name" },
+                { label: "Email" },
+                { label: "Company" },
+                { label: "Location" },
+                { label: "Recruiter" },
+                { label: "Tags" }
+              ]}
+            >
+              {!leads.length ? (
+                <EmptyRow colSpan={6}>No leads match these filters.</EmptyRow>
+              ) : (
+                leads.map((l: any) => (
                   <tr key={l.id}>
                     <td>
                       {l.contact_name}
-                      {l.cycle && l.cycle !== "current" && <span className="badge" style={{ marginLeft: 6 }}>Cycle {l.cycle}</span>}
-                      <br />
-                      {l.linkedin_url && <a href={l.linkedin_url} target="_blank">LinkedIn</a>}
+                      {l.cycle && l.cycle !== "current" ? <Badge tone="gray">Cycle {l.cycle}</Badge> : null}
+                      {l.linkedin_url ? (
+                        <>
+                          <br />
+                          <a href={l.linkedin_url} target="_blank" rel="noreferrer">
+                            LinkedIn
+                          </a>
+                        </>
+                      ) : null}
                     </td>
                     <td>{l.contact_email}</td>
-                    <td>{l.company}<br /><span className="muted">{l.title}</span></td>
+                    <td>
+                      {l.company}
+                      <br />
+                      <span className="text-muted">{l.title}</span>
+                    </td>
                     <td>{l.location || l.state}</td>
                     <td>{l.recruiter_name}</td>
                     <td>
-                      {l.client_feedback && <span className="badge">{l.client_feedback}</span>}
-                      {l.recall && String(l.recall).toLowerCase() !== "no" && <span className="badge" style={{ marginLeft: 4 }}>Recall</span>}
+                      {l.client_feedback ? <Badge tone="green">{l.client_feedback}</Badge> : null}
+                      {l.recall && String(l.recall).toLowerCase() !== "no" ? <Badge tone="red">Recall</Badge> : null}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-    </main>
+                ))
+              )}
+            </DataTable>
+          </Card>
+        ) : null}
+      </div>
+    </>
   );
 }
