@@ -16,12 +16,52 @@ const PERIODS: Array<{ key: PeriodKey; label: string }> = [
 
 type ListModal = { title: string; rows: Array<{ label: string; sub?: string }> } | null;
 
-function StatTile({ label, value, sub, onClick, color }: { label: string; value: string | number; sub?: string; onClick?: () => void; color?: string }) {
+/** Section titles shown next to the Back button, matching GAS's panel-title-text. */
+const SECTION_TITLES: Record<string, string> = {
+  tasks: "Daily Task",
+  recruiters: "Recruiters",
+  clients: "Client Tracker",
+  linkbooking: "Link Open vs Booking",
+  finance: "Finance",
+  reports: "Reports",
+  vendors: "Vendor Management"
+};
+
+/**
+ * GAS Growth stat tile: big number on top, uppercase label under it, optional
+ * sub-note. Uses the .gr-stat-* classes from Growth.html's own stylesheet
+ * (ported into section 3 of app/styles.css) -- number and label are stacked
+ * block elements, not inline, which is what keeps "On Fire" and its count on
+ * separate lines.
+ */
+function StatTile({
+  label,
+  value,
+  sub,
+  onClick,
+  color
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  onClick?: () => void;
+  color?: string;
+}) {
   return (
-    <div className={`metric ${onClick ? "clickable" : ""}`} onClick={onClick} style={{ cursor: onClick ? "pointer" : undefined }}>
-      <span>{label}</span>
-      <strong style={color ? { color } : undefined}>{value}</strong>
-      {sub && <div className="text-muted" style={{ fontSize: 11 }}>{sub}</div>}
+    <div
+      className={`gr-stat-tile${onClick ? " clickable" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && e.key === "Enter") onClick();
+      }}
+    >
+      <div className="gr-stat-num" style={color ? { color } : undefined}>
+        {value}
+      </div>
+      <div className="gr-stat-lbl">{label}</div>
+      {sub ? <div className="gr-stat-sub">{sub}</div> : null}
     </div>
   );
 }
@@ -835,9 +875,14 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       {message && <div className="msg msg-error">{message}</div>}
 
       {/* Pinned block — always visible above the tabs, matching GAS */}
-      <section className="card" style={{ background: "#eef0ff", borderColor: "#dfe3ff" }}>
-        <div className="card-header"><h2>🏢 Client Status</h2><span className="text-muted">Click a number for the list</span></div>
-        <section className="stats-grid">
+      <section className="gr-pinned">
+        <div className="gr-section-title">
+          Client Status{" "}
+          <span style={{ textTransform: "none", fontWeight: 500, color: "#999", fontSize: 11 }}>
+            (click a number for the list)
+          </span>
+        </div>
+        <section className="gr-stats-row">
           <StatTile label="On Fire" value={clients.onFire ?? 0} color="#dc2626" onClick={() => showClientBucket("onFire", "On Fire")} />
           <StatTile label="Smokin" value={clients.smokin ?? 0} color="#ea580c" onClick={() => showClientBucket("smokin", "Smokin")} />
           <StatTile label="On Track" value={clients.onTrack ?? 0} color="#0891b2" onClick={() => showClientBucket("onTrack", "On Track")} />
@@ -847,8 +892,8 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Wait List" value={clients.waitlistTabCount ?? 0} onClick={showWaitList} />
         </section>
 
-        <div className="card-header" style={{ marginTop: 14 }}><h2>📅 Appointments</h2></div>
-        <section className="stats-grid">
+        <div className="gr-section-title">Appointments</div>
+        <section className="gr-stats-row">
           <StatTile label="Today" value={appts.today ?? 0} />
           <StatTile label="Yesterday" value={appts.yesterday ?? 0} />
           <StatTile label="Last 7 Days" value={appts.last7 ?? 0} />
@@ -857,7 +902,12 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <StatTile label="Total Appt So Far" value={appts.total ?? 0} />
         </section>
 
-        <div className="card-header" style={{ marginTop: 14 }}><h2>📥 All Appointments</h2><span className="text-muted">Master sheet — every appointment received</span></div>
+        <div className="gr-section-title">
+          All Appointments{" "}
+          <span style={{ textTransform: "none", fontWeight: 500, color: "#999", fontSize: 11 }}>
+            (master sheet — every appointment received)
+          </span>
+        </div>
         <PeriodTable
           title=""
           rows={[
@@ -874,64 +924,97 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       </section>
 
       {tab === "dashboard" ? (
-        <section className="card">
-          <div className="card-header"><h2>Sections</h2></div>
-          <p className="text-muted" style={{ margin: 0 }}>Select a section below to see its full details.</p>
-          <div className="section-tile-grid">
-            <button className="section-tile" onClick={() => setTab("tasks")}>
-              <span className="section-tile-icon">📋</span>
-              <span>
-                <div className="section-tile-title">Daily Task</div>
-                <div className="text-muted">Personal task list grouped by topic — priority, ETA/TBD, and auto-generated recurring tasks</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={openRecruitersTab}>
-              <span className="section-tile-icon">👥</span>
-              <span>
-                <div className="section-tile-title">Recruiters <span className="text-muted" style={{ fontWeight: 400 }}>(Recruiter Activity)</span></div>
-                <div className="text-muted">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={openClientsTab}>
-              <span className="section-tile-icon">🏢</span>
-              <span>
-                <div className="section-tile-title">Client Tracker</div>
-                <div className="text-muted">Every client — quota, cycle, status, and payment in one table</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={() => setTab("linkbooking")}>
-              <span className="section-tile-icon">🔗</span>
-              <span>
-                <div className="section-tile-title">Link Open vs Booking</div>
-                <div className="text-muted">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={openFinanceTab}>
-              <span className="section-tile-icon">💰</span>
-              <span>
-                <div className="section-tile-title">Finance <span className="text-muted" style={{ fontWeight: 400 }}>(Cost &amp; Payments)</span></div>
-                <div className="text-muted">Company age, all-time cost &amp; earnings, and adding new cost/payment entries</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={openReportsTab}>
-              <span className="section-tile-icon">📈</span>
-              <span>
-                <div className="section-tile-title">Reports <span className="text-muted" style={{ fontWeight: 400 }}>(Billing Cycle &amp; Directory)</span></div>
-                <div className="text-muted">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time appts, sends &amp; Sales Nav seats</div>
-              </span>
-            </button>
-            <button className="section-tile" onClick={openVendorsTab}>
-              <span className="section-tile-icon">🏬</span>
-              <span>
-                <div className="section-tile-title">Vendor Management</div>
-                <div className="text-muted">Every LI profile by vendor — issue history, vendor feedback, replacements, and downtime per cycle</div>
-              </span>
-            </button>
+        <section>
+          <div className="gr-dash-heading">Sections</div>
+          <div className="gr-dash-sub">Select a section below to see its full details.</div>
+          <div className="tiles-grid">
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={() => setTab("tasks")}
+              onKeyDown={(e) => { if (e.key === "Enter") (() => setTab("tasks"))(); }}
+            >
+              <span className="tile-icon">📝</span>
+              <div className="tile-title">Daily Task</div>
+              <div className="tile-desc">Personal task list grouped by topic — priority, ETA/TBD, and auto-generated recurring tasks</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={openRecruitersTab}
+              onKeyDown={(e) => { if (e.key === "Enter") (openRecruitersTab)(); }}
+            >
+              <span className="tile-icon">🧑‍💼</span>
+              <div className="tile-title">Recruiters <span style={{ fontWeight: 500, color: "#999", fontSize: 12 }}>(Recruiter Activity)</span></div>
+              <div className="tile-desc">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={openClientsTab}
+              onKeyDown={(e) => { if (e.key === "Enter") (openClientsTab)(); }}
+            >
+              <span className="tile-icon">📊</span>
+              <div className="tile-title">Client Tracker</div>
+              <div className="tile-desc">Every client — quota, cycle, CA/NY ratios, and feedback in one searchable table</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={() => setTab("linkbooking")}
+              onKeyDown={(e) => { if (e.key === "Enter") (() => setTab("linkbooking"))(); }}
+            >
+              <span className="tile-icon">🔗</span>
+              <div className="tile-title">Link Open vs Booking</div>
+              <div className="tile-desc">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={openFinanceTab}
+              onKeyDown={(e) => { if (e.key === "Enter") (openFinanceTab)(); }}
+            >
+              <span className="tile-icon">💰</span>
+              <div className="tile-title">Finance <span style={{ fontWeight: 500, color: "#999", fontSize: 12 }}>(Cost &amp; Payments)</span></div>
+              <div className="tile-desc">Company age, all-time cost &amp; earnings, monthly trend, and adding new cost/payment entries</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={openReportsTab}
+              onKeyDown={(e) => { if (e.key === "Enter") (openReportsTab)(); }}
+            >
+              <span className="tile-icon">📈</span>
+              <div className="tile-title">Reports <span style={{ fontWeight: 500, color: "#999", fontSize: 12 }}>(Billing Cycle &amp; Directory)</span></div>
+              <div className="tile-desc">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time Appts, Sends &amp; Sales Nav seats</div>
+            </div>
+            <div
+              className="tile"
+              role="button"
+              tabIndex={0}
+              onClick={openVendorsTab}
+              onKeyDown={(e) => { if (e.key === "Enter") (openVendorsTab)(); }}
+            >
+              <span className="tile-icon">🏢</span>
+              <div className="tile-title">Vendor Management</div>
+              <div className="tile-desc">Every LI profile by vendor — issue history, vendor feedback, replacements, and downtime per cycle</div>
+            </div>
           </div>
         </section>
       ) : (
-        <div className="btn-group" style={{ marginTop: 14, marginBottom: 4 }}>
-          <button className="btn btn-outline" onClick={() => setTab("dashboard")}>← Dashboard</button>
+        // GAS section header: Back button + the section's own title, so you
+        // always know which section you're in and how to get out of it.
+        <div className="panel-nav">
+          <button className="btn-back" onClick={() => setTab("dashboard")}>
+            ← Dashboard
+          </button>
+          <span className="panel-title-text">{SECTION_TITLES[tab] || ""}</span>
         </div>
       )}
 
@@ -984,7 +1067,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
         <>
           <section className="card">
             <div className="card-header"><h2>👥 Recruiter Activity</h2></div>
-            <section className="stats-grid">
+            <section className="gr-stats-row">
               <StatTile label="Active Recruiters" value={recruitersSummary.active ?? 0} sub={`${recruitersSummary.bdInhouseCount ?? 0} BD/Inhouse · ${recruitersSummary.phCount ?? 0} PH`} />
               <StatTile label="Active Sales Nav" value={recruitersSummary.activeSalesNav ?? 0} />
             </section>
@@ -994,7 +1077,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             <div className="card-header"><h2>🟢 Recruiter Status</h2><span className="text-muted">From Time Log — click a number for the list</span></div>
             {!onlineStatus && <div className="text-muted">Loading...</div>}
             {onlineStatus && (
-              <section className="stats-grid">
+              <section className="gr-stats-row">
                 <StatTile label="Online Now" value={onlineStatus.online?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.online)} color="#059669" onClick={() => showRecruiterStatusBucket("online", "Online Now")} />
                 <StatTile label="Offline" value={onlineStatus.offline?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.offline)} color="#6b7280" onClick={() => showRecruiterStatusBucket("offline", "Offline")} />
                 <StatTile label="Not Started Today" value={onlineStatus.notStarted?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.notStarted)} color="#dc2626" onClick={() => showRecruiterStatusBucket("notStarted", "Not Started Today")} />
@@ -1018,7 +1101,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           <section className="card">
             <div className="card-header"><h2>📤 Sends</h2><span className="text-muted">Click a number to see who sent them</span></div>
-            <section className="stats-grid">
+            <section className="gr-stats-row">
               {PERIODS.map((p) => (
                 <StatTile
                   key={p.key}
@@ -1035,7 +1118,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             <div className="card-header"><h2>💬 New Nurture Sent</h2><span className="text-muted">First nurture message ever sent</span></div>
             {!nurtureFu && <div className="text-muted">Loading...</div>}
             {nurtureFu && (
-              <section className="stats-grid">
+              <section className="gr-stats-row">
                 {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.newNurture?.[p.key] ?? 0} />)}
               </section>
             )}
@@ -1046,7 +1129,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             {!nurtureFu && <div className="text-muted">Loading...</div>}
             {nurtureFu && (
               <>
-                <section className="stats-grid">
+                <section className="gr-stats-row">
                   {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.fuSent?.[p.key] ?? 0} />)}
                 </section>
                 <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
@@ -1590,19 +1673,24 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
       {tab === "reports" && (
         <>
-          <section className="card">
-            <h2>📈 Reports</h2>
-            <div className="row-auto">
-              <div className="stat-card"><div className="stat-num">{data.appointments?.length || 0}</div><div className="stat-label">Total Appointments</div></div>
-              <div className="stat-card"><div className="stat-num">{data.stats?.sendsLast7 || 0}</div><div className="stat-label">Sends Last 7 Days</div></div>
-              <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalCost || 0)}</div><div className="stat-label">Total Costs</div></div>
-              <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalEarning || 0)}</div><div className="stat-label">Total Earnings</div></div>
-            </div>
-            <div className="btn-group" style={{ marginTop: 12 }}>
-              <button className={`btn btn-${reportTab === "billing" ? "primary" : "outline"} btn-sm`} onClick={() => setReportTab("billing")}>Billing Cycle by Recruiter</button>
-              <button className={`btn btn-${reportTab === "directory" ? "primary" : "outline"} btn-sm`} onClick={() => setReportTab("directory")}>Recruiter Directory</button>
-            </div>
-          </section>
+          {/* GAS Reports goes straight from the nav to the report toggles.
+              The four unrelated stat tiles that used to sit here (total
+              appointments / sends / cost / earnings) belong to Finance and
+              the pinned block, not to Reports. */}
+          <div className="gr-toggle-btns">
+            <button
+              className={`btn btn-${reportTab === "billing" ? "primary" : "outline"} btn-sm`}
+              onClick={() => setReportTab("billing")}
+            >
+              Billing Cycle by Recruiter
+            </button>
+            <button
+              className={`btn btn-${reportTab === "directory" ? "primary" : "outline"} btn-sm`}
+              onClick={() => setReportTab("directory")}
+            >
+              Recruiter Directory
+            </button>
+          </div>
 
           {reportTab === "billing" && (
             <Card title="📆 Billing Cycle by Recruiter">

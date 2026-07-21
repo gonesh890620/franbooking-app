@@ -187,10 +187,23 @@ Then smoke-test in the side panel:
 
 ## Design system — now applied to every panel
 
-`app/styles.css` is `gas-webapp/CSS.html` ported verbatim (section 1), plus
-app-only additions written in the same visual language (section 2). **There is
-no longer a compatibility/alias layer** — every panel was converted to real GAS
-class names, so the aliases were deleted.
+`app/styles.css` has three sections:
+
+1. **`gas-webapp/CSS.html`, verbatim** — the shared design system.
+2. **App-only additions** in the same visual language (modals, banners, width
+   variants).
+3. **Per-panel styles**, ported from each GAS panel's *own* `<style>` block.
+
+Section 3 was the missing piece that made Growth render as jammed inline text
+(`On Fire0` instead of a stat tile). Each GAS panel carried page-specific CSS
+on top of `CSS.html` — 188 lines for Growth, 132 for Operations, plus Client,
+Agent, Admin and Recruiter. Only `CSS.html` was ported initially, so every
+panel-specific class (`.gr-stat-tile`, `.tile`, `.dt-task-card`, `.fin-chart`,
+`.vm-health`, `.ag-step`, `.sni-card`, `.appt-card` …) had no styles at all.
+
+**There is no compatibility/alias layer** — every panel uses real GAS class
+names. Verified by diffing every `className` in the JSX against every selector
+in the stylesheet: zero unresolved classes.
 
 Converted this session: Admin, Operations, Agent, Client, Growth, both login
 screens, the home page, the error page, RoleGate and WorkspaceDashboard.
