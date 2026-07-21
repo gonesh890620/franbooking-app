@@ -1,97 +1,271 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import BodyClass from "./BodyClass";
+import FeedbackTab from "./recruiter/FeedbackTab";
+import NurtureTab from "./recruiter/NurtureTab";
+import OutreachTab from "./recruiter/OutreachTab";
+import StatsTab from "./recruiter/StatsTab";
+import TasksTab from "./recruiter/TasksTab";
+import {
+  api,
+  Bootstrap,
+  ClientAssignment,
+  Message,
+  RatioRow,
+  Task,
+  toast,
+  ToastHost,
+  toolPost,
+  Usage,
+  useMsg
+} from "./recruiter/shared";
 
-type Usage = {
-  nurtureBalance?: number;
-  outreachBalance?: number;
-  profileBalance?: number;
-};
-
-type ClientAssignment = {
+type RecruiterUser = {
+  email: string;
   name: string;
-  status: string;
-  eventUrl: string;
+  impersonatorEmail?: string;
+  impersonatorName?: string;
 };
 
-type Task = {
-  name: string;
-  li: string;
-  client: string;
-  stage: string;
-  nurtureType: string;
-  status: string;
-  notes?: string;
-  paused?: boolean;
-  daysWaiting?: number | null;
-};
+type TabKey = "tasks" | "outreach" | "nurture" | "billing" | "feedback";
 
-type Bootstrap = {
-  usage?: Usage;
-  clients?: { clients: ClientAssignment[] };
-  tasks?: { tasks: Task[]; reviewTasks: Task[] };
-  clientRatio?: { rows: Array<{ client: string; count: number; pct: number }> };
-};
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {})
-    }
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error || "Request failed");
-  return data;
-}
-
-type RecruiterUser = { email: string; name: string; impersonatorEmail?: string; impersonatorName?: string };
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "tasks", label: "📋 Tasks" },
+  { key: "outreach", label: "📤 Outreach" },
+  { key: "nurture", label: "💬 Nurture" },
+  { key: "billing", label: "📊 Stats" },
+  { key: "feedback", label: "📝 Feedback" }
+];
 
 export default function RecruiterDashboard({ initialUser }: { initialUser: RecruiterUser | null }) {
   const [user, setUser] = useState(initialUser);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"tasks" | "outreach" | "nurture" | "stats" | "feedback">("tasks");
+  const [tab, setTab] = useState<TabKey>("tasks");
   const [boot, setBoot] = useState<Bootstrap>({});
   const [loading, setLoading] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [outreach, setOutreach] = useState({ name: "", li: "", outType: "InMail", content: "", subject: "", salesNavId: "", isCany: false });
-  const [nurture, setNurture] = useState({ li: "", reply: "", nurtureType: "Interested", client: "", conversation: "" });
-  const [contacts, setContacts] = useState<Array<{ name: string; li: string; status: string; client: string }>>([]);
-  const [targetRows, setTargetRows] = useState<Array<Record<string, string>>>([]);
-  const [stats, setStats] = useState<{ period?: string; total?: number; contacts?: number; outreach?: number; byDate?: Array<{ date: string; count: number }> }>({});
-  const [feedback, setFeedback] = useState({ salesNavAll: true, salesNavNoCount: "", salesNavNoReason: "", unusual: "", responsesToday: "", comments: "" });
-  const [leave, setLeave] = useState({ leaveDate: "", duration: "1", reason: "" });
-  const [aiBusy, setAiBusy] = useState(false);
-  const [unsureRows, setUnsureRows] = useState<Array<{ code?: string; criteria: string; response?: string }>>([]);
-  const timeLogSessionId = useRef<string | null>(null);
+  const { msg, show, hide } = useMsg();
 
-  async function loadBootstrap() {
+  const loadBootstrap = useCallback(async () => {
     setLoading(true);
-    setMessage("");
+    hide();
     try {
       setBoot(await api<Bootstrap>("/api/recruiter/bootstrap"));
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Could not load dashboard");
+      show(e instanceof Error ? e.message : "Could not load dashboard", "error");
     } finally {
       setLoading(false);
     }
-  }
+  }, [hide, show]);
 
   useEffect(() => {
     if (user) void loadBootstrap();
-  }, [user]);
+  }, [user, loadBootstrap]);
 
-  // Time Log heartbeat — starts an online session on login, pings every ~4
-  // minutes (jittered so many recruiters logging in together don't collide),
-  // and ends the session on logout/unmount. Non-blocking: failures here
-  // should never affect the rest of the dashboard.
+  useTimeLog(!!user);
+
+  if (!user) return <LoginScreen onLoggedIn={setUser} />;
+
+  const usage: Usage = boot.usage || {};
+  const clients: ClientAssignment[] = boot.clients?.clients || [];
+  const tasks: Task[] = boot.tasks?.tasks || [];
+  const reviewTasks: Task[] = boot.tasks?.reviewTasks || [];
+  const canyMax = boot.tasks?.canyMax || 6;
+  const ratio: RatioRow[] = boot.clientRatio?.ratio || boot.clientRatio?.rows || [];
+  const suggested = boot.clientRatio?.suggested || "";
+
+  const calendarUrlFor = (client: string) =>
+    clients.find((c) => c.name === client)?.eventUrl || "";
+
+  /** Removes a finished task from view without a full refetch. */
+  function dropTask(view: "today" | "review", index: number) {
+    setBoot((prev) => {
+      const t = prev.tasks;
+      if (!t) return prev;
+      const key = view === "review" ? "reviewTasks" : "tasks";
+      const list = [...(t[key] || [])];
+      list.splice(index, 1);
+      return { ...prev, tasks: { ...t, [key]: list } };
+    });
+  }
+
+  return (
+    <>
+      <BodyClass names="full-page narrow-page" />
+      <ToastHost />
+
+      <div className="app-header">
+        <div className="app-logo">📋 Recruiter</div>
+        <div className="flex-row">
+          <CreditBar usage={usage} />
+          <span className="app-user">{user.name}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => void logout()}>
+            Logout
+          </button>
+        </div>
+      </div>
+
+      {/* Screening can continue manually without Profile Selection credits —
+          the LI Screening Process card on Outreach has the criteria. */}
+      {Number(usage.profileBalance || 0) <= 0 ? (
+        <div
+          style={{
+            background: "#fff8f0",
+            borderBottom: "1px solid #f0c070",
+            padding: "6px 12px",
+            fontSize: 11,
+            color: "#92400e"
+          }}
+        >
+          ⚠️ Out of Profile Selection credits — you can still continue screening manually. Open the{" "}
+          <strong>LI Screening Process</strong> card for the criteria.
+        </div>
+      ) : null}
+
+      {user.impersonatorEmail ? (
+        <div className="impersonation-banner">
+          <span>
+            👁 Viewing as <strong>{user.name}</strong>
+          </span>
+          <button className="btn btn-outline btn-sm" onClick={() => void returnToGrowth()}>
+            ← Return to Growth
+          </button>
+        </div>
+      ) : null}
+
+      <div className="tabs">
+        {TABS.map((t) => (
+          <div
+            key={t.key}
+            className={`tab${tab === t.key ? " active" : ""}`}
+            onClick={() => setTab(t.key)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setTab(t.key);
+            }}
+          >
+            {t.key === "tasks" ? `📋 Tasks (${tasks.length})` : t.label}
+          </div>
+        ))}
+      </div>
+
+      <div className="screen-content">
+        <Message msg={msg} />
+
+        {loading && !boot.tasks ? (
+          <p className="text-muted text-center loading-dots" style={{ padding: 20 }}>
+            Loading
+          </p>
+        ) : null}
+
+        {tab === "tasks" ? (
+          <TasksTab
+            tasks={tasks}
+            reviewTasks={reviewTasks}
+            canyMax={canyMax}
+            clients={clients}
+            loadError={boot.tasks?.error || ""}
+            onRefresh={() => void loadBootstrap()}
+            onTaskDone={dropTask}
+            calendarUrlFor={calendarUrlFor}
+          />
+        ) : null}
+
+        {tab === "outreach" ? <OutreachTab onSaved={() => void loadBootstrap()} /> : null}
+
+        {tab === "nurture" ? (
+          <NurtureTab
+            clients={clients}
+            ratio={ratio}
+            suggested={suggested}
+            calendarUrlFor={calendarUrlFor}
+            onSaved={() => void loadBootstrap()}
+          />
+        ) : null}
+
+        {tab === "billing" ? <StatsTab /> : null}
+        {tab === "feedback" ? <FeedbackTab /> : null}
+      </div>
+    </>
+  );
+}
+
+/* ── CREDIT BAR ─────────────────────────────────────────────────────────────
+   N = Nurture, O = Outreach, P = Profile Selection. Turns red at <= 5 so a
+   recruiter sees it coming before they're blocked mid-send. */
+function CreditBar({ usage }: { usage: Usage }) {
+  const [busy, setBusy] = useState(false);
+  const failed = !!usage.error;
+
+  const pill = (balance: number | undefined, suffix: string) => {
+    const n = Number(balance || 0);
+    return (
+      <span className={`credit-pill${n <= 5 ? " urgent" : ""}`}>
+        {failed ? `ERR ${suffix}` : `${n} ${suffix}`}
+      </span>
+    );
+  };
+
+  async function requestMore() {
+    setBusy(true);
+    try {
+      await toolPost("requestCredits", { type: "all" });
+      toast("Request sent! Admin will add credits shortly.");
+    } catch (e) {
+      toast(`Error: ${e instanceof Error ? e.message : "request failed"}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="credit-bar">
+      {pill(usage.nurtureBalance, "N")}
+      {pill(usage.outreachBalance, "O")}
+      {pill(usage.profileBalance, "P")}
+      <button
+        className="btn btn-primary btn-sm"
+        style={{ fontSize: 10, padding: "3px 8px", borderRadius: 12 }}
+        disabled={busy}
+        onClick={() => void requestMore()}
+      >
+        {busy ? "Sending..." : "+ Get More"}
+      </button>
+    </div>
+  );
+}
+
+/* ── TIME LOG ───────────────────────────────────────────────────────────────
+   Tracks an online session for the Growth panel's recruiter-activity view.
+   Heartbeat every 2 min reports the last real interaction (not "now"), so a
+   closed laptop stops counting as active. Best-effort throughout: a failure
+   here must never disturb the recruiter's actual work. */
+function useTimeLog(active: boolean) {
+  const sessionId = useRef<string | null>(null);
+  const lastActivity = useRef(Date.now());
+
   useEffect(() => {
-    if (!user) return;
+    if (!active) return;
     let cancelled = false;
-    let pingTimer: ReturnType<typeof setInterval> | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    const bump = () => {
+      lastActivity.current = Date.now();
+    };
+    (["click", "keydown", "mousemove", "scroll"] as const).forEach((ev) =>
+      document.addEventListener(ev, bump, { passive: true })
+    );
+
+    const end = () => {
+      if (!sessionId.current) return;
+      const id = sessionId.current;
+      sessionId.current = null;
+      void api("/api/recruiter/timelog", {
+        method: "POST",
+        body: JSON.stringify({ action: "end", sessionId: id })
+      }).catch(() => {});
+    };
+
     (async () => {
       try {
         const res = await api<{ ok: boolean; sessionId?: string }>("/api/recruiter/timelog", {
@@ -99,470 +273,108 @@ export default function RecruiterDashboard({ initialUser }: { initialUser: Recru
           body: JSON.stringify({ action: "start" })
         });
         if (cancelled) return;
-        timeLogSessionId.current = res.sessionId || null;
-        const jitter = Math.floor(Math.random() * 60000);
-        pingTimer = setInterval(() => {
-          if (!timeLogSessionId.current) return;
-          void api("/api/recruiter/timelog", {
+        sessionId.current = res.sessionId || null;
+
+        heartbeat = setInterval(() => {
+          if (!sessionId.current) return;
+          void api<{ alreadyClosed?: boolean }>("/api/recruiter/timelog", {
             method: "POST",
-            body: JSON.stringify({ action: "ping", sessionId: timeLogSessionId.current })
-          }).catch(() => {});
-        }, 4 * 60000 + jitter);
+            body: JSON.stringify({
+              action: "ping",
+              sessionId: sessionId.current,
+              lastActivity: lastActivity.current
+            })
+          })
+            .then((data) => {
+              // Server-side auto-close swept this row; stop pinging a dead
+              // session so the next activity opens a fresh one.
+              if (data?.alreadyClosed) sessionId.current = null;
+            })
+            .catch(() => {});
+        }, 2 * 60 * 1000);
       } catch {
-        // Time log tracking is best-effort.
+        // Non-blocking.
       }
     })();
+
+    window.addEventListener("beforeunload", end);
+
     return () => {
       cancelled = true;
-      if (pingTimer) clearInterval(pingTimer);
-      if (timeLogSessionId.current) {
-        const sessionId = timeLogSessionId.current;
-        timeLogSessionId.current = null;
-        void api("/api/recruiter/timelog", { method: "POST", body: JSON.stringify({ action: "end", sessionId }) }).catch(() => {});
-      }
+      if (heartbeat) clearInterval(heartbeat);
+      (["click", "keydown", "mousemove", "scroll"] as const).forEach((ev) =>
+        document.removeEventListener(ev, bump)
+      );
+      window.removeEventListener("beforeunload", end);
+      end();
     };
-  }, [user]);
+  }, [active]);
+}
 
-  const clients = boot.clients?.clients || [];
-  const tasks = boot.tasks?.tasks || [];
-  const reviewTasks = boot.tasks?.reviewTasks || [];
-  const currentTasks = useMemo(() => [...tasks, ...reviewTasks], [tasks, reviewTasks]);
-  const nurtureClientPaused = Boolean(clients.find((c) => c.name === nurture.client) && /paused/i.test(clients.find((c) => c.name === nurture.client)?.status || ""));
+/* ── AUTH ───────────────────────────────────────────────────────────────── */
 
-  async function login() {
-    setLoading(true);
-    setMessage("");
+async function logout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {
+    // Fall through to the redirect regardless.
+  }
+  window.location.href = "/login";
+}
+
+async function returnToGrowth() {
+  try {
+    await api("/api/auth/return-impersonation", { method: "POST" });
+  } catch {
+    // Fall through to the redirect regardless.
+  }
+  window.location.href = "/growth";
+}
+
+function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: RecruiterUser) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { msg, show, hide } = useMsg();
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    hide();
     try {
-      const result = await api<{ ok: true; name: string; email: string }>("/api/auth/login", {
+      const res = await api<{ email: string; name: string }>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
-      setUser({ name: result.name, email: result.email });
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Login failed");
+      onLoggedIn({ email: res.email, name: res.name });
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Login failed", "error");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }
-
-  async function logout() {
-    await api("/api/auth/logout", { method: "POST" });
-    setUser(null);
-    setBoot({});
-  }
-
-  async function returnToGrowth() {
-    const result = await api<{ page: string }>("/api/auth/return-impersonation", { method: "POST" });
-    window.location.href = result.page || "/growth";
-  }
-
-  async function tool<T>(action: string, params: Record<string, string> = {}) {
-    const qs = new URLSearchParams({ action, ...params });
-    return api<T>(`/api/recruiter/tools?${qs.toString()}`);
-  }
-
-  async function postTool(action: string, body: Record<string, unknown> = {}) {
-    return api("/api/recruiter/tools", { method: "POST", body: JSON.stringify({ action, ...body }) });
-  }
-
-  async function loadOutreachTemplate() {
-    const tpl = await tool<{ subject?: string; body?: string; text?: string; code?: string }>("outreachTpl", { outType: outreach.outType });
-    setOutreach({ ...outreach, subject: tpl.subject || tpl.code || outreach.subject, content: tpl.body || tpl.text || "" });
-  }
-
-  async function checkDuplicate() {
-    if (!outreach.li.trim()) return;
-    const dup = await tool<{ duplicate: boolean; matches?: Array<{ name: string; status: string }> }>("checkLiDup", { li: outreach.li });
-    setMessage(dup.duplicate ? `Duplicate found: ${(dup.matches || []).map((m) => `${m.name} ${m.status}`).join(", ")}` : "No duplicate found.");
-  }
-
-  async function loadTargetArea(q = "") {
-    const data = await tool<{ rows: Array<Record<string, string>> }>("targetArea", { q });
-    setTargetRows(data.rows || []);
-  }
-
-  async function searchContacts(q = "") {
-    const qs = new URLSearchParams(q ? { q } : {});
-    const data = await api<{ contacts: Array<{ name: string; li: string; status: string; client: string }> }>(`/api/recruiter/contacts?${qs.toString()}`);
-    setContacts(data.contacts || []);
-  }
-
-  async function loadNurtureTemplate() {
-    const tpl = await tool<{ body?: string; text?: string }>("nurtureTpl", { nType: nurture.nurtureType, client: nurture.client });
-    setNurture({ ...nurture, reply: tpl.body || tpl.text || "" });
-  }
-
-  async function callAi(action: string, body: Record<string, unknown>) {
-    setAiBusy(true);
-    setMessage("");
-    try {
-      const data = await api<{ body: string; error?: string; message?: string }>("/api/recruiter/ai", {
-        method: "POST",
-        body: JSON.stringify({ action, ...body })
-      });
-      return data.body || "";
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "AI request failed");
-      return null;
-    } finally {
-      setAiBusy(false);
-    }
-  }
-
-  async function generateOutreachAi() {
-    const body = await callAi("generateOutreach", { name: outreach.name, outType: outreach.outType });
-    if (body !== null) setOutreach((o) => ({ ...o, content: body }));
-  }
-
-  async function rewriteOutreachAi() {
-    if (!outreach.content.trim()) { setMessage("Write a draft first, then Rewrite."); return; }
-    const body = await callAi("rewriteOutreach", { name: outreach.name, li: outreach.li, draft: outreach.content, outType: outreach.outType });
-    if (body !== null) setOutreach((o) => ({ ...o, content: body }));
-  }
-
-  async function generateNurtureAi() {
-    const body = await callAi("generateNurture", { li: nurture.li, nurtureType: nurture.nurtureType, conversation: nurture.conversation, client: nurture.client });
-    if (body !== null) setNurture((n) => ({ ...n, reply: body }));
-  }
-
-  async function rewriteNurtureAi() {
-    if (!nurture.reply.trim()) { setMessage("Write a draft first, then Rewrite."); return; }
-    const body = await callAi("rewriteNurture", { li: nurture.li, draft: nurture.reply, client: nurture.client });
-    if (body !== null) setNurture((n) => ({ ...n, reply: body }));
-  }
-
-  async function loadUnsureCriteria() {
-    if (unsureRows.length) return;
-    const data = await tool<{ rows: Array<{ code?: string; criteria: string; response?: string }> }>("unsureCriteria");
-    setUnsureRows(data.rows || []);
-  }
-
-  // Rotation — picks the least-loaded non-paused client from the recruiter's
-  // own client-ratio counts, matching GAS's Rotation button (ratio-balancing,
-  // excludes paused clients so a prospect never gets assigned to a client
-  // that can't take them right now).
-  function runRotation() {
-    const ratioRows = boot.clientRatio?.rows || [];
-    const pausedNames = new Set(clients.filter((c) => /paused/i.test(c.status)).map((c) => c.name));
-    const eligibleClientNames = clients.filter((c) => !pausedNames.has(c.name)).map((c) => c.name);
-    const candidates = ratioRows.filter((r) => eligibleClientNames.includes(r.client));
-    const pool = candidates.length ? candidates : eligibleClientNames.map((name) => ({ client: name, count: 0, pct: 0 }));
-    if (!pool.length) { setMessage("No active (non-paused) clients available for Rotation."); return; }
-    const best = pool.reduce((min, row) => (row.count < min.count ? row : min), pool[0]);
-    setNurture((n) => ({ ...n, client: best.client }));
-    setMessage(`Rotation picked ${best.client}.`);
-  }
-
-  async function loadStats() {
-    setStats(await tool("billingStats"));
-  }
-
-  async function submitDailyFeedback() {
-    await postTool("submitFeedback", feedback);
-    setMessage("Feedback submitted.");
-    setFeedback({ salesNavAll: true, salesNavNoCount: "", salesNavNoReason: "", unusual: "", responsesToday: "", comments: "" });
-  }
-
-  async function submitLeaveRequest() {
-    await postTool("submitLeave", leave);
-    setMessage("Leave request submitted.");
-    setLeave({ leaveDate: "", duration: "1", reason: "" });
-  }
-
-  async function requestMoreCredits() {
-    await postTool("requestCredits", { type: "all" });
-    setMessage("Credit request sent.");
-  }
-
-  async function saveTask(task: Task, idx: number) {
-    const reply = drafts[String(idx)] || "";
-    if (!reply.trim()) {
-      setMessage("Write a reply before saving.");
-      return;
-    }
-    setLoading(true);
-    try {
-      await api("/api/recruiter/save-nurture", {
-        method: "POST",
-        body: JSON.stringify({
-          li: task.li,
-          reply,
-          nurtureType: task.nurtureType,
-          client: task.client,
-          source: "custom"
-        })
-      });
-      setMessage("Saved.");
-      await loadBootstrap();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function mark(path: string, li: string) {
-    setLoading(true);
-    try {
-      await api(path, { method: "POST", body: JSON.stringify({ li }) });
-      await loadBootstrap();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Action failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveOutreach() {
-    setLoading(true);
-    setMessage("");
-    try {
-      await api("/api/recruiter/save-outreach", {
-        method: "POST",
-        body: JSON.stringify(outreach)
-      });
-      setMessage("Outreach saved.");
-      setOutreach({ name: "", li: "", outType: "InMail", content: "", subject: "", salesNavId: "", isCany: false });
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Outreach save failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveNurture() {
-    setLoading(true);
-    setMessage("");
-    try {
-      await api("/api/recruiter/save-nurture", {
-        method: "POST",
-        body: JSON.stringify(nurture)
-      });
-      setMessage("Nurture saved.");
-      setNurture({ li: "", reply: "", nurtureType: "Interested", client: "", conversation: "" });
-      await loadBootstrap();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Nurture save failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!user) {
-    return (
-      <main className="login-shell">
-        <section className="login-card">
-          <div className="brand">Franbooking</div>
-          <h1>Recruiter Login</h1>
-          <p>Use your approved Franbooking account.</p>
-          <div className="form-grid">
-            <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-            <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-            <button className="btn btn-primary" disabled={loading} onClick={login}>Login</button>
-          </div>
-          {message && <div className="notice error">{message}</div>}
-        </section>
-      </main>
-    );
   }
 
   return (
-    <main className="app-shell">
-      <div className="topbar">
-        <div className="topbar-title">
-          <div className="brand">Franbooking</div>
-          <h1>Recruiter Dashboard</h1>
-          <div className="muted">{user.name} · {user.email}</div>
+    <div className="login-shell">
+      <form className="login-card" onSubmit={submit}>
+        <div className="app-logo">📋 Recruiter</div>
+        <h1>Sign in</h1>
+        <p>Use your Franbooking recruiter account.</p>
+
+        <div className="form-row">
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
-        <div className="actions">
-          <button className="btn btn-outline" onClick={loadBootstrap} disabled={loading}>Refresh</button>
-          <button className="btn btn-outline" onClick={logout}>Logout</button>
+        <div className="form-row">
+          <label>Password</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
-      </div>
 
-      {user.impersonatorEmail && (
-        <div className="notice warn">
-          Viewing as {user.name} — <button className="btn btn-outline" onClick={returnToGrowth}>Return to Growth</button>
-        </div>
-      )}
-
-      <div className="credit-row">
-        <span className="credit-pill">{boot.usage?.nurtureBalance ?? "-"} Nurture</span>
-        <span className="credit-pill">{boot.usage?.outreachBalance ?? "-"} Outreach</span>
-        <span className="credit-pill">{boot.usage?.profileBalance ?? "-"} Profile</span>
-        <button className="btn btn-outline" onClick={requestMoreCredits}>Get More Credit</button>
-      </div>
-
-      {message && <div className="notice warn">{message}</div>}
-
-      <div className="tabs" style={{ marginTop: 14 }}>
-        <button className={`tab ${activeTab === "tasks" ? "active" : ""}`} onClick={() => setActiveTab("tasks")}>Tasks</button>
-        <button className={`tab ${activeTab === "outreach" ? "active" : ""}`} onClick={() => setActiveTab("outreach")}>Outreach</button>
-        <button className={`tab ${activeTab === "nurture" ? "active" : ""}`} onClick={() => setActiveTab("nurture")}>Nurture</button>
-        <button className={`tab ${activeTab === "stats" ? "active" : ""}`} onClick={() => { setActiveTab("stats"); void loadStats(); }}>Stats</button>
-        <button className={`tab ${activeTab === "feedback" ? "active" : ""}`} onClick={() => setActiveTab("feedback")}>Feedback</button>
-      </div>
-
-      {activeTab === "tasks" && (
-        <section className="panel">
-          <h2>Follow-ups & Review Due</h2>
-          <div className="task-list">
-            {currentTasks.length === 0 && <div className="muted">No tasks loaded.</div>}
-            {currentTasks.map((task, idx) => (
-              <article className="task-card" key={`${task.li}-${idx}`}>
-                <div className="task-head">
-                  <div>
-                    <div className="task-name">{task.name || "Contact"}</div>
-                    <div className="muted">{task.client || "No client"} · {task.status}</div>
-                  </div>
-                  <span className="badge">{task.stage}</span>
-                </div>
-                {task.paused && <div className="notice warn">{task.client} is paused. Save is blocked server-side.</div>}
-                <textarea
-                  placeholder="Write the follow-up reply here..."
-                  value={drafts[String(idx)] || ""}
-                  onChange={(e) => setDrafts((d) => ({ ...d, [String(idx)]: e.target.value }))}
-                />
-                <div className="actions">
-                  <button className="btn btn-primary" disabled={loading || task.paused} onClick={() => saveTask(task, idx)}>Save</button>
-                  <button className="btn btn-danger" disabled={loading} onClick={() => mark("/api/recruiter/mark-not-interested", task.li)}>Not Interested</button>
-                  <button className="btn btn-outline" disabled={loading} onClick={() => mark("/api/recruiter/mark-profile-restricted", task.li)}>Profile Restricted</button>
-                  {task.li && <a className="btn btn-outline" href={task.li} target="_blank">LinkedIn</a>}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "outreach" && (
-        <section className="panel">
-          <h2>Outreach Save</h2>
-          <div className="form-grid">
-            <label>Prospect Name<input value={outreach.name} onChange={(e) => setOutreach({ ...outreach, name: e.target.value })} /></label>
-            <label>LinkedIn URL<input value={outreach.li} onBlur={checkDuplicate} onChange={(e) => setOutreach({ ...outreach, li: e.target.value })} /></label>
-            <label>Type<select value={outreach.outType} onChange={(e) => setOutreach({ ...outreach, outType: e.target.value })}><option>InMail</option><option>Invite</option><option>DM</option></select></label>
-            <label>Subject / Code<input value={outreach.subject} onChange={(e) => setOutreach({ ...outreach, subject: e.target.value })} /></label>
-            <label>Sales Nav ID<input value={outreach.salesNavId} onChange={(e) => setOutreach({ ...outreach, salesNavId: e.target.value })} /></label>
-            <label><span><input type="checkbox" checked={outreach.isCany} onChange={(e) => setOutreach({ ...outreach, isCany: e.target.checked })} /> CA/NY prospect</span></label>
-            <label>Message<textarea value={outreach.content} onChange={(e) => setOutreach({ ...outreach, content: e.target.value })} /></label>
-            <div className="actions">
-              <button className="btn btn-outline" disabled={loading} onClick={loadOutreachTemplate}>Load Template</button>
-              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={generateOutreachAi}>AI Generate</button>
-              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={rewriteOutreachAi}>AI Rewrite</button>
-              <button className="btn btn-outline" disabled={loading} onClick={() => loadTargetArea("")}>Target Area</button>
-              <button className="btn btn-primary" disabled={loading} onClick={saveOutreach}>Save Outreach</button>
-            </div>
-            {targetRows.length > 0 && (
-              <div className="compact-list">
-                {targetRows.slice(0, 8).map((row, idx) => (
-                  <div className="compact-row" key={idx}>
-                    <strong>{row.profile_name || row.city || row.zip_code || "Target"}</strong>
-                    <span>{[row.city, row.state, row.best_cst_time].filter(Boolean).join(" | ")}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "nurture" && (
-        <section className="panel">
-          <h2>Nurture Save</h2>
-          <div className="form-grid">
-            <label>Search Contacts<input placeholder="Type name or LinkedIn URL" onChange={(e) => searchContacts(e.target.value)} /></label>
-            {contacts.length > 0 && (
-              <div className="compact-list">
-                {contacts.slice(0, 8).map((c, idx) => (
-                  <button className="compact-row compact-button" key={`${c.li}-${idx}`} onClick={() => setNurture({ ...nurture, li: c.li, client: c.client })}>
-                    <strong>{c.name || "Contact"}</strong>
-                    <span>{c.client} | {c.status}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <label>LinkedIn URL<input value={nurture.li} onChange={(e) => setNurture({ ...nurture, li: e.target.value })} /></label>
-            <label>
-              Client
-              <span className="actions" style={{ display: "inline-flex", marginLeft: 8 }}>
-                <select value={nurture.client} onChange={(e) => setNurture({ ...nurture, client: e.target.value })}><option value="">Select client</option>{clients.map((c) => <option key={c.name} value={c.name}>{c.name} {c.status ? `(${c.status})` : ""}</option>)}</select>
-                <button type="button" className="btn btn-outline" disabled={loading} onClick={runRotation}>Rotation</button>
-              </span>
-            </label>
-            {nurtureClientPaused && (
-              <div className="notice warn">
-                {nurture.client} is currently paused. Wait for it to reactivate, or use Rotation to pick another client.
-              </div>
-            )}
-            <label>Type<select value={nurture.nurtureType} onChange={(e) => { const nurtureType = e.target.value; setNurture({ ...nurture, nurtureType }); if (nurtureType === "Unsure") void loadUnsureCriteria(); }}><option>Interested</option><option>Unsure</option><option>SDFU</option><option>FU1</option><option>FU2</option><option>FU3</option><option>Client Rotation</option><option>Not Interested</option></select></label>
-            {nurture.nurtureType === "Unsure" && unsureRows.length > 0 && (
-              <div className="compact-list">
-                {unsureRows.map((row, idx) => (
-                  <div className="compact-row" key={idx}>
-                    <strong>{row.criteria}</strong>
-                    {row.response && <span>{row.response}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            <label>Conversation<textarea value={nurture.conversation} onChange={(e) => setNurture({ ...nurture, conversation: e.target.value })} /></label>
-            <label>Reply<textarea value={nurture.reply} onChange={(e) => setNurture({ ...nurture, reply: e.target.value })} /></label>
-            <div className="actions">
-              <button className="btn btn-outline" disabled={loading} onClick={loadNurtureTemplate}>Load Template</button>
-              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={generateNurtureAi}>AI Generate</button>
-              <button className="btn btn-outline" disabled={loading || aiBusy} onClick={rewriteNurtureAi}>AI Rewrite</button>
-              <button className="btn btn-primary" disabled={loading || nurtureClientPaused} onClick={saveNurture}>Save Nurture</button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {activeTab === "stats" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>Stats</h2>
-            <button className="btn btn-outline" onClick={loadStats}>Refresh</button>
-          </div>
-          <section className="metric-grid">
-            <div className="metric"><span>Period</span><strong>{stats.period || "-"}</strong></div>
-            <div className="metric"><span>Appointments</span><strong>{stats.total ?? 0}</strong></div>
-            <div className="metric"><span>FU Contacts</span><strong>{stats.contacts ?? 0}</strong></div>
-            <div className="metric"><span>Outreach Saves</span><strong>{stats.outreach ?? 0}</strong></div>
-          </section>
-          <div className="compact-list">
-            {(stats.byDate || []).map((row) => (
-              <div className="compact-row" key={row.date}><strong>{row.date}</strong><span>{row.count}</span></div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {activeTab === "feedback" && (
-        <section className="grid two">
-          <div className="panel">
-            <h2>Daily Feedback</h2>
-            <div className="form-grid">
-              <label><span><input type="checkbox" checked={feedback.salesNavAll} onChange={(e) => setFeedback({ ...feedback, salesNavAll: e.target.checked })} /> All Sales Nav working</span></label>
-              <label>Sales Nav Not Working Count<input value={feedback.salesNavNoCount} onChange={(e) => setFeedback({ ...feedback, salesNavNoCount: e.target.value })} /></label>
-              <label>Reason<input value={feedback.salesNavNoReason} onChange={(e) => setFeedback({ ...feedback, salesNavNoReason: e.target.value })} /></label>
-              <label>Unusual Activity<input value={feedback.unusual} onChange={(e) => setFeedback({ ...feedback, unusual: e.target.value })} /></label>
-              <label>Responses Today<input value={feedback.responsesToday} onChange={(e) => setFeedback({ ...feedback, responsesToday: e.target.value })} /></label>
-              <label>Comments<textarea value={feedback.comments} onChange={(e) => setFeedback({ ...feedback, comments: e.target.value })} /></label>
-              <button className="btn btn-primary" onClick={submitDailyFeedback}>Submit Feedback</button>
-            </div>
-          </div>
-          <div className="panel">
-            <h2>Leave Request</h2>
-            <div className="form-grid">
-              <label>Leave Date<input type="date" value={leave.leaveDate} onChange={(e) => setLeave({ ...leave, leaveDate: e.target.value })} /></label>
-              <label>Duration Days<input value={leave.duration} onChange={(e) => setLeave({ ...leave, duration: e.target.value })} /></label>
-              <label>Reason<textarea value={leave.reason} onChange={(e) => setLeave({ ...leave, reason: e.target.value })} /></label>
-              <button className="btn btn-primary" onClick={submitLeaveRequest}>Submit Leave</button>
-            </div>
-          </div>
-        </section>
-      )}
-    </main>
+        <button className="btn btn-primary btn-full" type="submit" disabled={busy}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+        <Message msg={msg} />
+      </form>
+    </div>
   );
 }

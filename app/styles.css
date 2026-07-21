@@ -1,502 +1,339 @@
-:root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --ink: #18181b;
-  --muted: #71717a;
-  --line: #e4e4e7;
-  --brand: #5b21b6;
-  --brand-soft: #f3e8ff;
-  --danger: #b91c1c;
-  --success: #166534;
-  --warn: #92400e;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-.login-shell {
-  align-items: center;
-  display: flex;
-  min-height: 100vh;
-  justify-content: center;
-  padding: 24px;
-}
-
-.login-card,
-.panel,
-.task-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
-}
-
-.login-card {
-  max-width: 420px;
-  padding: 28px;
-  width: 100%;
-}
-
-.home-shell {
-  align-items: center;
-  display: flex;
-  min-height: 100vh;
-  justify-content: center;
-  padding: 24px;
-}
-
-.home-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
-  display: grid;
-  gap: 20px;
-  max-width: 620px;
-  padding: 30px;
-  width: 100%;
-}
-
-.home-panel h1 {
-  font-size: 30px;
-  margin-top: 8px;
-}
-
-.quick-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-}
-
-.quick-card {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--ink);
-  display: grid;
-  gap: 4px;
-  min-height: 76px;
-  padding: 14px;
-  text-decoration: none;
-}
-
-.quick-card:hover {
-  border-color: #c4b5fd;
-  background: #faf5ff;
-}
-
-.quick-card span {
-  font-weight: 800;
-}
-
-.quick-card small {
-  color: var(--muted);
-}
-
-.brand {
-  color: var(--brand);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-h1,
-h2,
-h3 {
-  letter-spacing: 0;
-  margin: 0;
-}
-
-.login-card h1 {
-  font-size: 26px;
-  margin-top: 8px;
-}
-
-.login-card p,
-.muted {
-  color: var(--muted);
-}
-
-.primary-link,
-.btn {
-  align-items: center;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  display: inline-flex;
-  font-weight: 700;
-  justify-content: center;
-  min-height: 36px;
-  padding: 8px 12px;
-  text-decoration: none;
-}
-
-.primary-link,
-.btn-primary {
-  background: var(--brand);
-  color: #fff;
-}
-
-.btn-outline {
-  background: #fff;
-  border-color: var(--line);
-  color: var(--ink);
-}
-
-.btn-danger {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: var(--danger);
-}
-
-.btn:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
-
-.app-shell {
-  margin: 0 auto;
-  max-width: 1120px;
-  padding: 18px;
-}
-
-.app-shell.wide {
-  max-width: 1320px;
-}
-
-.topbar {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.topbar-title {
-  display: grid;
-  gap: 2px;
-}
-
-.topbar h1 {
-  font-size: 20px;
-}
-
-.credit-row,
-.tabs,
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.credit-pill {
-  background: var(--brand-soft);
-  border: 1px solid #ddd6fe;
-  border-radius: 999px;
-  color: #4c1d95;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 5px 10px;
-}
-
-.tabs {
-  margin-bottom: 14px;
-}
-
-.tab {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 700;
-  padding: 9px 12px;
-}
-
-.tab.active {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-}
-
-.grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.panel {
-  padding: 14px;
-}
-
-.panel h2 {
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-
-.metric-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  margin-bottom: 14px;
-}
-
-.metric,
-.count-item {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-}
-
-.metric span,
-.count-item span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.metric strong {
-  font-size: 28px;
-}
-
-.metric.clickable {
-  transition: border-color 0.15s ease;
-}
-
-.metric.clickable:hover {
-  border-color: var(--brand, #6c2eb9);
-}
-
-.section-tile-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(2, 1fr);
-  margin-top: 12px;
-}
-
-@media (max-width: 620px) {
-  .section-tile-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.section-tile {
-  background: #fff;
-  border: 1.5px solid var(--line);
-  border-radius: 14px;
-  cursor: pointer;
-  display: flex;
-  gap: 14px;
-  padding: 18px;
-  text-align: left;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.section-tile:hover {
-  border-color: var(--brand, #6c2eb9);
-  box-shadow: 0 6px 16px rgba(91, 33, 182, 0.12);
-  transform: translateY(-2px);
-}
-
-.section-tile-icon {
-  font-size: 34px;
-  line-height: 1;
-}
-
-.section-tile-title {
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-
-.section-head {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.section-head h2 {
-  margin: 0;
-}
-
-.table-wrap {
-  overflow-x: auto;
-}
-
-table {
-  border-collapse: collapse;
-  min-width: 860px;
-  width: 100%;
-}
-
-th,
-td {
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  padding: 10px;
-  text-align: left;
-  vertical-align: top;
-}
-
-th {
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-}
-
-.count-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.compact-list {
-  display: grid;
-  gap: 8px;
-}
-
-.compact-row {
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  padding: 10px 12px;
-}
-
-.compact-row span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.compact-button {
-  background: #fff;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-}
-
-.compact-button:hover {
-  background: #fafafa;
-}
-
-.form-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.admin-create-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-label {
-  color: var(--muted);
-  display: grid;
-  font-size: 12px;
-  font-weight: 700;
-  gap: 5px;
-}
-
-input,
-textarea,
-select {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: var(--ink);
-  padding: 9px 10px;
-  width: 100%;
-}
-
-textarea {
-  min-height: 96px;
-  resize: vertical;
-}
-
-.task-list {
-  display: grid;
-  gap: 10px;
-}
-
-.task-card {
-  padding: 12px;
-}
-
-.task-head {
-  align-items: flex-start;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-}
-
-.task-name {
-  font-weight: 800;
-}
-
-.badge {
-  background: #eef2ff;
-  border-radius: 999px;
-  color: #3730a3;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 800;
-  padding: 3px 8px;
-  white-space: nowrap;
-}
-
-.notice {
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  margin-top: 8px;
-  padding: 8px 10px;
-}
-
-.notice.warn {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  color: var(--warn);
-}
-
-.notice.error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: var(--danger);
-}
-
-.notice.success {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  color: var(--success);
-}
-
-.hidden {
-  display: none;
-}
-
-@media (min-width: 860px) {
-  .grid.two {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.7fr);
-  }
-}
+/* ============================================================================
+   FRANBOOKING DESIGN SYSTEM
+   Ported verbatim from the Google Apps Script webapp (gas-webapp/CSS.html).
+   Section 1 below is the GAS stylesheet, unchanged, and is the source of
+   truth for the look and feel. Do not restyle these classes -- if the GAS
+   app changes, re-port it here.
+   Section 2 is app-only additions (modals, impersonation banner, charts)
+   written in the same visual language.
+   Section 3 is a temporary compatibility layer mapping the older invented
+   Next.js class names onto GAS equivalents, so panels that have not been
+   migrated yet still render in the GAS style. Delete each alias as the
+   corresponding component is rewritten to use real GAS class names.
+   ========================================================================= */
+
+/* ===========================================================================
+   SECTION 1 -- GAS CSS.html (verbatim)
+   ======================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1a1a1a; font-size: 14px; min-height: 100vh; }
+
+/* ── TYPOGRAPHY ── */
+h1 { font-size: 18px; font-weight: 700; }
+h2 { font-size: 14px; font-weight: 600; }
+label { font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
+
+/* ── INPUTS ── */
+input[type=text], input[type=email], input[type=url], input[type=number], input[type=password], input[type=date], textarea, select {
+  width: 100%; padding: 8px 10px; border: 1.5px solid #ddd; border-radius: 8px;
+  font-size: 13px; font-family: inherit; background: #fff; outline: none;
+  transition: border-color .15s;
+}
+input:focus, textarea:focus, select:focus { border-color: #6c2eb9; }
+textarea { resize: vertical; min-height: 72px; }
+
+/* ── BUTTONS ── */
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 8px 14px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: inherit; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: #6c2eb9; color: #fff; }
+.btn-primary:not(:disabled):hover { background: #5a22a0; }
+.btn-outline { background: transparent; color: #6c2eb9; border: 1.5px solid #6c2eb9; }
+.btn-outline:not(:disabled):hover { background: #f3eaff; }
+.btn-ghost  { background: transparent; color: #555; border: 1.5px solid #ddd; }
+.btn-ghost:not(:disabled):hover { background: #f0f0f0; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-sm     { padding: 5px 10px; font-size: 12px; }
+.btn-full   { width: 100%; justify-content: center; }
+.btn-copy   { background: #e8f4e8; color: #166534; border: 1.5px solid #bbf7d0; }
+.btn-copy:hover { background: #dcfce7; }
+.btn-group  { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── TYPE TOGGLE ── */
+.type-toggle { display: flex; gap: 0; border: 1.5px solid #6c2eb9; border-radius: 8px; overflow: hidden; }
+.type-toggle .t-btn { flex: 1; padding: 7px 6px; border: none; background: transparent; color: #6c2eb9; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+.type-toggle .t-btn.active { background: #6c2eb9; color: #fff; }
+.type-toggle .t-btn:not(.active):hover { background: #f3eaff; }
+
+/* ── TABS ── */
+.tabs { display: flex; background: #fff; border-bottom: 2px solid #eee; }
+.tab  { flex: 1; padding: 10px 4px; text-align: center; font-size: 12px; font-weight: 600; color: #888; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; white-space: nowrap; }
+.tab.active { color: #6c2eb9; border-bottom-color: #6c2eb9; }
+.tab:hover:not(.active) { color: #333; }
+
+/* ── CARDS ── */
+.card { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 10px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+
+/* ── MESSAGES ── */
+.msg { padding: 8px 12px; border-radius: 8px; font-size: 12px; margin: 6px 0; }
+.msg-error   { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.msg-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.msg-info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.msg-warn    { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+/* ── CREDITS BAR ── */
+.credit-bar { display: flex; gap: 6px; }
+.credit-pill { background: #f3eaff; color: #6c2eb9; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid #d8b4fe; white-space: nowrap; }
+.credit-pill.urgent { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+
+/* ── RESPONSE BOX ── */
+.reply-box { background: #fafafa; border: 1.5px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; min-height: 56px; }
+.char-count { font-size: 11px; color: #888; text-align: right; }
+
+/* ── TASK LIST ── */
+.task-item { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 8px; }
+.task-name  { font-weight: 700; font-size: 14px; line-height: 1.3; }
+.task-meta  { font-size: 11px; color: #666; margin: 3px 0 8px; }
+.stage-badge { display: inline-block; padding: 2px 6px; border-radius: 20px; font-size: 10px; font-weight: 700; background: #ede9fe; color: #6c2eb9; margin-left: 4px; }
+.stage-badge.sdfu { background: #fef3c7; color: #d97706; }
+.stage-badge.review { background: #fce7f3; color: #9d174d; }
+
+/* ── CONTACT SEARCH ── */
+.contact-results { border: 1.5px solid #ddd; border-radius: 8px; max-height: 160px; overflow-y: auto; background: #fff; display: none; }
+.contact-results.show { display: block; }
+.contact-result  { padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.contact-result:last-child { border-bottom: none; }
+.contact-result:hover { background: #f3eaff; }
+.contact-result .cn { font-weight: 600; font-size: 13px; }
+.contact-result .cs { font-size: 11px; color: #888; }
+
+/* ── MISC ── */
+.hidden { display: none !important; }
+.divider { border: none; border-top: 1px solid #eee; margin: 10px 0; }
+.form-row { margin-bottom: 10px; }
+.row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.text-center { text-align: center; }
+.text-muted  { color: #888; font-size: 12px; }
+.badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-green  { background: #dcfce7; color: #166534; }
+.badge-yellow { background: #fef3c7; color: #d97706; }
+.badge-red    { background: #fee2e2; color: #dc2626; }
+.badge-gray   { background: #f0f0f0; color: #555; }
+.badge-purple { background: #ede9fe; color: #6c2eb9; }
+.ratio-bar  { height: 5px; background: #e5e7eb; border-radius: 3px; margin: 3px 0; }
+.ratio-fill { height: 100%; background: #6c2eb9; border-radius: 3px; transition: width .3s; }
+
+/* ── HEADER (side-panel compact) ── */
+.app-header { background: #fff; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 4px rgba(0,0,0,.08); position: sticky; top: 0; z-index: 10; }
+.app-logo   { font-size: 14px; font-weight: 800; color: #6c2eb9; }
+.app-user   { font-size: 11px; color: #555; }
+
+/* ── MAIN CONTENT (full width for side panel) ── */
+.screen-content { padding: 10px; }
+
+/* ── LOADING ── */
+.loading-dots::after { content: ''; animation: dots 1.2s infinite; }
+@keyframes dots { 0%,20%{content:'.'} 40%{content:'..'} 60%,100%{content:'...'} }
+
+/* ── ADMIN TABLE ── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { text-align: left; padding: 7px 8px; background: #f5f5f7; color: #555; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.data-table td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+.data-table tr:hover td { background: #fafafa; }
+.table-wrap { overflow-x: auto; }
+
+/* ── STATS GRID (2-col for side panel) ── */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.stat-card  { background: #fff; border-radius: 10px; padding: 12px 8px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.stat-num   { font-size: 26px; font-weight: 800; color: #6c2eb9; }
+.stat-label { font-size: 10px; color: #888; text-transform: uppercase; font-weight: 600; margin-top: 2px; line-height: 1.2; }
+
+/* ── CLIENT STAT COLORS ── */
+.stat-green  .stat-num { color: #166534; }
+.stat-green  { background: #f0fdf4; }
+.stat-blue   .stat-num { color: #1d4ed8; }
+.stat-blue   { background: #eff6ff; }
+.stat-purple .stat-num { color: #6c2eb9; }
+.stat-purple { background: #f3eaff; }
+.stat-amber  .stat-num { color: #d97706; }
+.stat-amber  { background: #fffbeb; }
+
+/* ── FULL-PAGE MODE (Admin / Ops / Client) ── */
+body.full-page { font-size: 15px; }
+body.full-page .app-header { padding: 14px 28px; }
+body.full-page .app-logo   { font-size: 20px; }
+body.full-page .app-user   { font-size: 13px; }
+body.full-page .tabs .tab  { padding: 13px 24px; font-size: 14px; }
+body.full-page .screen-content { max-width: 1100px; margin: 0 auto; padding: 24px 28px; }
+body.full-page h2           { font-size: 20px; }
+body.full-page .card        { padding: 20px 24px; margin-bottom: 16px; border-radius: 14px; }
+body.full-page label        { font-size: 12px; margin-bottom: 4px; }
+body.full-page .stats-grid  { grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+body.full-page .stat-card   { padding: 18px 12px; border-radius: 14px; }
+body.full-page .stat-num    { font-size: 36px; }
+body.full-page .stat-label  { font-size: 11px; }
+body.full-page .btn         { padding: 10px 18px; font-size: 14px; }
+body.full-page .btn-sm      { padding: 6px 12px; font-size: 12px; }
+body.full-page .data-table  { font-size: 13px; }
+body.full-page .data-table th { font-size: 11px; padding: 9px 12px; }
+body.full-page .data-table td { padding: 10px 12px; }
+body.full-page input[type=text],
+body.full-page input[type=email],
+body.full-page input[type=url],
+body.full-page input[type=number],
+body.full-page input[type=password],
+body.full-page input[type=date],
+body.full-page textarea,
+body.full-page select       { font-size: 14px; padding: 10px 12px; }
+body.full-page .form-row    { margin-bottom: 14px; }
+body.full-page .reply-box   { font-size: 14px; padding: 14px 16px; min-height: 72px; }
+body.full-page .msg         { font-size: 13px; padding: 10px 14px; }
+body.full-page .task-item   { padding: 16px 20px; margin-bottom: 10px; }
+body.full-page .task-name   { font-size: 16px; }
+body.full-page .task-meta   { font-size: 12px; }
+
+/* ── RECRUITER SIDE-PANEL HINT ── */
+.panel-hint { font-size: 11px; color: #888; background: #f3eaff; border-bottom: 1px solid #e9d5ff; padding: 4px 10px; text-align: center; }
+
+/* ===========================================================================
+   SECTION 2 -- App-only additions, in the same visual language.
+   GAS did these with google.script.run + inline DOM; the webapp needs real
+   CSS for them. Colors/radii/shadows all match Section 1.
+   ======================================================================== */
+
+/* Wider full-page variant for the data-dense Growth / Operations panels.
+   GAS capped at 1100px; those two panels need more room in a browser tab. */
+body.full-page.wide-page .screen-content { max-width: 1320px; }
+
+/* Narrow full-page variant for Recruiter / Agent.
+   In GAS these two rendered in the ~400px extension side panel, so their
+   workflow is a single vertical column. In a browser tab we keep that exact
+   column order and step-by-step flow, just at a comfortable reading width
+   instead of stretching it into a wide dashboard. */
+body.full-page.narrow-page .screen-content { max-width: 760px; }
+body.full-page.narrow-page .stats-grid { grid-template-columns: repeat(2, 1fr); }
+
+/* Login / public shells */
+.login-shell { align-items: center; display: flex; min-height: 100vh; justify-content: center; padding: 24px; }
+.login-card { background: #fff; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.08); max-width: 420px; padding: 28px; width: 100%; }
+.login-card h1 { font-size: 22px; margin-bottom: 4px; }
+.login-card p { color: #888; font-size: 13px; margin-bottom: 16px; }
+
+.home-shell { align-items: center; display: flex; min-height: 100vh; justify-content: center; padding: 24px; }
+.home-panel { background: #fff; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.08); max-width: 620px; padding: 30px; width: 100%; }
+.home-panel h1 { font-size: 26px; margin: 8px 0 16px; }
+
+/* Section tiles (role picker / workspace dashboard) */
+.section-tile-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); margin-top: 12px; }
+@media (max-width: 620px) { .section-tile-grid { grid-template-columns: 1fr; } }
+.section-tile { background: #fff; border: 1.5px solid #eee; border-radius: 14px; cursor: pointer; display: flex; gap: 14px; padding: 18px; text-align: left; text-decoration: none; color: #1a1a1a; transition: all .15s; }
+.section-tile:hover { border-color: #6c2eb9; box-shadow: 0 6px 16px rgba(108,46,185,.12); transform: translateY(-2px); }
+.section-tile-icon { font-size: 34px; line-height: 1; }
+.section-tile-title { font-weight: 800; margin-bottom: 4px; }
+
+/* Modals -- GAS built these inline; standardized here */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.modal-card { background: #fff; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.2); max-height: 86vh; max-width: 720px; overflow-y: auto; padding: 20px 24px; width: 100%; }
+.modal-card.narrow { max-width: 460px; }
+.modal-head { align-items: center; display: flex; justify-content: space-between; margin-bottom: 14px; }
+.modal-close { background: transparent; border: none; color: #888; cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; }
+.modal-close:hover { color: #1a1a1a; }
+
+/* Impersonation banner (Growth viewing as another user) */
+.impersonation-banner { align-items: center; background: #fffbeb; border-bottom: 1px solid #fde68a; color: #92400e; display: flex; font-size: 12px; font-weight: 600; gap: 10px; justify-content: space-between; padding: 7px 14px; }
+
+/* Section header with a right-aligned action cluster */
+.section-head { align-items: center; display: flex; gap: 10px; justify-content: space-between; margin-bottom: 10px; }
+.section-head h2 { margin: 0; }
+
+/* Dependency-free bar chart (Client portal) */
+.bar-chart { display: grid; gap: 6px; }
+.bar-row { align-items: center; display: grid; gap: 8px; grid-template-columns: 110px 1fr 46px; font-size: 12px; }
+.bar-track { background: #f0f0f0; border-radius: 3px; height: 14px; overflow: hidden; }
+.bar-fill { background: #6c2eb9; height: 100%; border-radius: 3px; transition: width .3s; }
+.bar-value { color: #555; font-weight: 700; text-align: right; }
+
+/* Clickable metric (Growth drilldowns) */
+.stat-card.clickable { cursor: pointer; transition: all .15s; }
+.stat-card.clickable:hover { box-shadow: 0 3px 10px rgba(108,46,185,.18); transform: translateY(-1px); }
+
+/* Sortable table headers */
+.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable:hover { color: #6c2eb9; }
+
+/* Floating action button (CEO brainstorm) */
+.fab { position: fixed; right: 24px; bottom: 24px; width: 52px; height: 52px; border-radius: 50%; background: #6c2eb9; color: #fff; border: none; cursor: pointer; font-size: 22px; box-shadow: 0 4px 14px rgba(108,46,185,.4); z-index: 90; }
+.fab:hover { background: #5a22a0; }
+
+/* Utility */
+.row-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.row-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.flex-between { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
+.flex-row { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mb-8 { margin-bottom: 8px; }
+
+/* ===========================================================================
+   SECTION 3 -- Compatibility aliases (TEMPORARY).
+   Older components still use invented class names. These map them onto the
+   GAS look so nothing renders unstyled mid-migration. Remove each alias once
+   its component uses real GAS classes.
+   ======================================================================== */
+
+/* .panel -> .card */
+.panel { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 10px; }
+body.full-page .panel { padding: 20px 24px; margin-bottom: 16px; border-radius: 14px; }
+.panel h2 { margin-bottom: 10px; }
+
+/* .app-shell -> .screen-content */
+.app-shell { max-width: 1100px; margin: 0 auto; padding: 24px 28px; }
+.app-shell.wide { max-width: 1320px; }
+
+/* .topbar -> .app-header */
+.topbar { align-items: center; display: flex; gap: 12px; justify-content: space-between; margin-bottom: 14px; }
+.topbar-title { display: grid; gap: 2px; }
+.topbar h1 { font-size: 20px; }
+.brand { color: #6c2eb9; font-size: 14px; font-weight: 800; text-transform: uppercase; }
+
+/* .metric -> .stat-card */
+.metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 14px; }
+.metric, .count-item { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); display: grid; gap: 6px; padding: 16px 12px; text-align: center; }
+.metric span, .count-item span { color: #888; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.metric strong, .count-item strong { color: #6c2eb9; font-size: 30px; font-weight: 800; }
+.metric.clickable { cursor: pointer; transition: all .15s; }
+.metric.clickable:hover { box-shadow: 0 3px 10px rgba(108,46,185,.18); transform: translateY(-1px); }
+.count-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+/* .notice -> .msg */
+.notice { border-radius: 8px; font-size: 12px; margin: 6px 0; padding: 8px 12px; }
+.notice.warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.notice.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.notice.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.notice.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+
+/* .task-card -> .task-item */
+.task-list { display: grid; gap: 8px; }
+.task-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.06); padding: 12px; }
+.task-head { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
+
+/* Legacy tab pills -> GAS underline tabs are defined in Section 1; the old
+   .tabs used flex-wrap pills. Section 1 wins; this only restores wrapping. */
+.tabs { flex-wrap: wrap; }
+
+/* Misc legacy layout helpers */
+.grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 860px) { .grid.two { grid-template-columns: minmax(0, 1fr) minmax(360px, 0.7fr); } }
+.form-grid { display: grid; gap: 10px; }
+.admin-create-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.actions, .credit-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.compact-list { display: grid; gap: 8px; }
+.compact-row { align-items: center; border: 1px solid #eee; border-radius: 8px; display: flex; gap: 10px; justify-content: space-between; padding: 10px 12px; }
+.compact-row span { color: #888; font-size: 12px; }
+.compact-button { background: #fff; cursor: pointer; text-align: left; width: 100%; }
+.compact-button:hover { background: #f3eaff; }
+.muted { color: #888; font-size: 12px; }
+.primary-link { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 14px; border-radius: 8px; background: #6c2eb9; color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; }
+.primary-link:hover { background: #5a22a0; }
+.quick-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.quick-card { border: 1.5px solid #eee; border-radius: 10px; color: #1a1a1a; display: grid; gap: 4px; min-height: 76px; padding: 14px; text-decoration: none; }
+.quick-card:hover { border-color: #6c2eb9; background: #f3eaff; }
+.quick-card span { font-weight: 800; }
+.quick-card small { color: #888; }
+
+/* Bare tables in legacy components inherit the GAS data-table look */
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th { text-align: left; padding: 7px 8px; background: #f5f5f7; color: #555; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+body.full-page table { font-size: 13px; }
+body.full-page th { font-size: 11px; padding: 9px 12px; }
+body.full-page td { padding: 10px 12px; }

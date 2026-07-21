@@ -1,0 +1,16 @@
+{
+  "//": "Fast typecheck config. Same options as tsconfig.json but skips .next/types and disables incremental output, so `npm run typecheck` gives a clean signal in seconds without a full Next build. Use tsconfig.json (via `npm run build`) for the authoritative check.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "lib/**/*.ts",
+    "components/**/*.tsx",
+    "app/**/*.tsx",
+    "app/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}

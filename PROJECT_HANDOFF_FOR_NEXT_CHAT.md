@@ -313,3 +313,148 @@ Implemented in `lib/legacyRecruiter.ts` by restoring the pre-Phase-1 Supabase-wr
 **If picking this up fresh:** re-verify the `app.franbooking.com` domain assumption is correct before telling the user to reload the extension, and manually smoke-test at minimum: login (loginBootstrap), Outreach save, Nurture save, LI duplicate check, and the Time Log heartbeat (confirm a session starts, pings, and ends correctly, and that reopening the side panel resumes the same session same-day).
 
 **Unused-table cleanup resolved:** an Explore-agent audit grepped every `.from("table")` call across `app/`+`lib/` against all 34 tables + the `fu_tracker_master` view from `supabase/001` through `005`. Confirmed zero-risk (never populated, never used) candidates: `legacy_sources`, `legacy_row_links`, `client_accounts`, `recruiter_payments`, and the view `fu_tracker_master`. A second tier — `recruiter_client_assignments`, `client_dtc_links`, `recruiter_target_areas`, `recruiter_necessary_things`, `recurring_team_tasks` — holds real synced data but is never read by the app; the user chose to leave those alone for now (recommended "zero-risk only" option). `supabase/006_drop_unused_tables.sql` drops the 4 tables + view (child-before-parent order for the `legacy_row_links`→`legacy_sources` FK) — **run this in the Supabase SQL editor**, nothing else needed on the app side since nothing references these.
+
+---
+
+## Design-system port + Recruiter rebuild (this session)
+
+### Root cause of "the architecture is built but it's not like me"
+
+The Next.js app had invented its own design system instead of porting the GAS
+one. `app/styles.css` used Arial, `#5b21b6`, and class names that exist nowhere
+in GAS (`.panel`, `.metric`, `.notice`, `.compact-list`, `.app-shell`,
+`.form-grid`). GAS's `CSS.html` uses the system font stack, `#6c2eb9`, and
+`.card` / `.stat-card` / `.type-toggle` / `.task-item` / `.stage-badge` /
+`.msg-*` / `.credit-pill` / `.data-table`, plus a `body.full-page` scaling
+layer. Zero class names overlapped, so no panel could look like GAS.
+
+Scale of the gap at the start: GAS panels total ~11,900 lines of UI
+(Growth 5,456 / Operations 2,574 / Recruiter 1,883 / Admin 776 / Agent 720 /
+Client 461) against 2,592 lines of React components.
+
+### 1. Design system (`app/styles.css`, rewritten)
+
+Three sections, clearly delimited in the file:
+
+1. **GAS `CSS.html`, verbatim.** Source of truth for look and feel. If the GAS
+   app changes, re-port this section rather than restyling.
+2. **App-only additions** in the same visual language: modals, impersonation
+   banner, login/home shells, bar chart, FAB, sortable headers, plus two
+   full-page width variants -- `wide-page` (1320px, for data-dense Growth /
+   Operations) and `narrow-page` (760px, for Recruiter / Agent, which were
+   built for the ~400px extension side panel and stay single-column).
+3. **Compatibility aliases (temporary).** Maps the old invented class names
+   onto GAS visuals so panels not yet rewritten still render correctly. Delete
+   each alias as its component moves to real GAS class names. This is why
+   Growth / Operations / Admin / Client already look much closer to GAS
+   without having been rewritten yet.
+
+New `components/BodyClass.tsx` applies the body-level layout class per route,
+replacing GAS's hardcoded `<body class="full-page">`.
+
+### 2. Recruiter panel (rebuilt to GAS + extension parity)
+
+`components/RecruiterDashboard.tsx` rewritten as a shell (header, credit pills,
+tabs, time log, impersonation banner, login) plus one component per tab under
+`components/recruiter/`:
+
+- `shared.tsx` — API helpers, GAS-shaped types, `Message`/`useMsg` (the
+  `.msg-*` contract), `ToastHost`, `ReplyBox` (`.reply-box` + char count),
+  `TypeToggle`, `CollapsibleCard`, `useDebounced` (GAS's 300ms search timer).
+- `TasksTab.tsx` — Today's Follow-ups / Review Due switcher with live counts,
+  per-card Tpl / AI / Custom / Rewrite / Not Interested / SN Remove / Profile
+  Restricted / Link, paused-client guard, advisory CA/NY cap notice, Sales Nav
+  ID copy, save-then-remove-from-view.
+- `OutreachTab.tsx` — auto-loading rotating template on type change (free, no
+  credit), Custom + AI Rewrite, live duplicate check, CA/NY checkbox, Sales Nav
+  ID retained across saves, subject copy, LI Screening Process reference card,
+  Target Area lookup with ZIP copy.
+- `NurtureTab.tsx` — contact search, continuing-conversation mode (hides the
+  type picker and carries the stage forward), ratio bar, Rotation with
+  least-loaded auto-assignment and CA/NY-aware candidate filtering, dynamic
+  Unsure criteria, CA/NY backfill batch tool, AI Generate / Custom / Rewrite.
+- `StatsTab.tsx` — semi-monthly billing periods, day-by-day table, full
+  referral program panel. Billing and referral load independently so one slow
+  query can't block the other.
+- `FeedbackTab.tsx` — Leave Status + Daily Feedback, with the Sales Nav
+  follow-up questions revealed only when the answer is "No".
+
+`lib/recruiterCopy.ts` (new) holds the message templates and substitution
+helpers ported verbatim: `NOT_INTERESTED_REPLY`, `CLIENT_ROTATION_REPLY`,
+`CANY_ROTATION_REPLY`, `SALES_NAV_REMOVE_REPLY`, `subCal` / `subName` /
+`subRotationNames` / `stripLongDash`, `nextNurtureTypeForStatus`, `deriveName`,
+`buildBillingPeriods`. **These strings are what prospects actually receive --
+keep them in sync with GAS rather than rewording them.**
+
+Deliberate deviation: GAS used `contenteditable` divs for editable copy; these
+are textareas styled as `.reply-box`. Same editing behaviour, no cursor-jump
+issues with controlled React state.
+
+### 3. Three API contract bugs found and fixed (`lib/legacyRecruiter.ts`)
+
+All three broke the **already cut-over Chrome extension**, which reads GAS's
+original response keys:
+
+1. `checkLiDuplicate` returned `{ duplicate, matches }`, but `panel.js` reads
+   `data.isDuplicate`. Every duplicate check silently rendered "not a
+   duplicate". Now emits both shapes (`isDuplicate` / `recruiter` / `date`).
+2. `getClientRatio` returned `{ rows }`, but `panel.js` reads `data.ratio` and
+   `data.suggested`. The ratio bar stayed empty and rotation had no suggestion.
+   Now returns GAS's `{ ratio, suggested, canyBlocked }` (plus `rows`). Also
+   fixed the percentage: it was `count/max`, GAS uses `count/total`, which
+   changed which client rotation picked as least-loaded. `todayCount` and
+   `canyBlocked` are now populated (`canyBlocked` derives from Daily
+   Assignment's CA+NY Appts column against `CONFIG.canyMax`).
+3. `getTargetArea` returned snake_case keys, but `panel.js` reads
+   `r.profileName` / `r.salesNavId` / `r.zip` / `r.bestTime`. Now emits both.
+
+### 4. Performance (`lib/ttlCache.ts`, new)
+
+`findRecruiter` reads the entire Access Control sheet on every call and sits
+behind `getFuSheet` / `getDailyAssignmentSheet` / `getTargetAreaSheet` /
+`getUsage`. A single `bootstrapRecruiter` fanned out to roughly **six** full
+Access Control reads plus **three** reads of the recruiter's Daily Assignment
+tab, because `getUsage`, `getClients`, `getDailyTasks` and `getClientRatio`
+each resolved the same data independently.
+
+Both are now memoized behind a short TTL (30s / 20s) that also shares in-flight
+promises, so the `Promise.all` in bootstrap issues one request instead of N.
+Collapses to 1 Access Control read + 1 Daily Assignment read per bootstrap.
+
+Only these two read paths are cached. Nothing a recruiter writes is cached --
+FU Tracker contents, contacts, tasks and every save path still read through
+fresh. `logoutRecruiter(email)` and the exported `forgetRecruiterCache(email)`
+drop entries early.
+
+**Not yet measured against production latency** -- the reduction in Sheets API
+calls is structural and verifiable by inspection, but real before/after timings
+need a live session.
+
+### 5. Verification
+
+`npm run typecheck:fast` (new script + `tsconfig.check.json`) typechecks
+`lib/` + `components/` + `app/` in seconds, skipping `.next/types`. Clean, zero
+errors. `npm run build` remains the authoritative check and has **not** been
+run this session -- the sandbox used here couldn't run this project's
+`node_modules` (they're Windows-built native binaries) and tears down between
+commands, so a full Next build wasn't possible. **Run `npm run build` locally
+before deploying.**
+
+### Still open
+
+- **Growth panel** (`Growth.html`, 5,456 lines: 8 sections, ~60 endpoints,
+  ~25 modal types) is unchanged apart from inheriting the ported design system.
+  It remains the largest single piece of work. Stage 1 (pinned block +
+  Recruiters) was done in an earlier session; Client Tracker, Reports,
+  Finance + Recruiter Payments, Daily Task + Recurring, Vendor Management and
+  the GA4 "Link Open vs Booking" section are still to build.
+- **Operations / Admin / Agent / Client** panels still use the compatibility
+  aliases rather than real GAS class names and DOM structure. They look close
+  now; they aren't structurally ported.
+- **Missing env vars.** `.env.local` has no `ANTHROPIC_API_KEY` (AI
+  Generate/Rewrite fails without it) and no `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+  (the `/admin` login falls back to a dev-only placeholder). Both are also
+  needed in Vercel.
+- **Manual smoke test needed** for the Recruiter rebuild: Outreach save,
+  Nurture save, LI duplicate check, Rotation client pick, Target Area lookup,
+  Time Log heartbeat, and the same paths through the reloaded extension.

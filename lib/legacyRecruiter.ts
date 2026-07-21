@@ -3,8 +3,20 @@ import { clearSession, setSession } from "./auth";
 import { appendValues, colName, findSheetTitle, findSheetTitleExact, getValues, listSheetTitles, quoteSheetName, updateValues } from "./sheets";
 import { cleanClientName, FU, normalizeDateCell, normalizeLi, RC, SheetRow, todayIso } from "./legacyMaps";
 import { getSupabaseAdmin } from "./supabaseAdmin";
+import { cached, invalidate } from "./ttlCache";
 
 const ACCESS_TAB = "Recruiters";
+
+/**
+ * Drops this recruiter's memoized Sheets reads. Call after any write that
+ * changes their Access Control row (credits) or Daily Assignment tab, so the
+ * next read reflects it immediately instead of waiting out the TTL.
+ */
+function invalidateRecruiterCache(email: string) {
+  const key = String(email || "").toLowerCase().trim();
+  invalidate(`recruiter:${key}`);
+  invalidate(`clients:${key}`);
+}
 
 export type RecruiterRecord = {
   rowNumber: number;
@@ -180,7 +192,20 @@ async function insertSupabaseOutreach(email: string, data: {
   }
 }
 
+/**
+ * Resolves a recruiter's Access Control row.
+ *
+ * Memoized: this reads the whole Access Control sheet, and it sits behind
+ * getFuSheet / getDailyAssignmentSheet / getTargetAreaSheet / getUsage, so a
+ * single bootstrap used to trigger it about six times. See lib/ttlCache.ts.
+ */
 export async function findRecruiter(email: string): Promise<RecruiterRecord | null> {
+  return cached(`recruiter:${String(email || "").toLowerCase().trim()}`, 30_000, () =>
+    findRecruiterUncached(email)
+  );
+}
+
+async function findRecruiterUncached(email: string): Promise<RecruiterRecord | null> {
   const values = await getValues(CONFIG.accessSheetId, `${quoteSheetName(ACCESS_TAB)}!A2:T`);
   const target = String(email || "").toLowerCase().trim();
   for (let i = 0; i < values.length; i++) {
@@ -297,8 +322,21 @@ async function loginSupabaseUser(email: string, password: string) {
   }
 }
 
-export function logoutRecruiter() {
+export function logoutRecruiter(email = "") {
+  // Drop this recruiter's memoized Sheets reads on the way out, so a later
+  // login (or a Growth impersonation of the same person) starts from fresh
+  // Access Control / Daily Assignment data rather than a warm entry.
+  if (email) invalidateRecruiterCache(email);
   clearSession();
+}
+
+/**
+ * Public cache-buster for callers that change a recruiter's Access Control row
+ * or Daily Assignment tab (e.g. admin tooling), so the change is visible
+ * immediately instead of after the TTL.
+ */
+export function forgetRecruiterCache(email: string) {
+  invalidateRecruiterCache(email);
 }
 
 // Time Log — online/offline heartbeat tracking (Supabase-only, matches GAS's
@@ -394,7 +432,21 @@ export async function getUsage(email: string) {
   };
 }
 
+/**
+ * The recruiter's Daily Assignment tab (client roster, statuses, DTC links).
+ *
+ * Memoized: getDailyTasks, getClientRatio and getNurtureTemplate each need
+ * this, so one bootstrap previously read the same tab three times. Sheets-only
+ * by design -- this stays the recruiter's own operational source of truth.
+ * See lib/ttlCache.ts.
+ */
 export async function getClients(email: string) {
+  return cached(`clients:${String(email || "").toLowerCase().trim()}`, 20_000, () =>
+    getClientsUncached(email)
+  );
+}
+
+async function getClientsUncached(email: string) {
   const sheet = await getDailyAssignmentSheet(email);
   if (!sheet) return { clients: [], error: "Daily Assignment tab not found" };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:F`);
@@ -674,9 +726,16 @@ export async function getContacts(email: string, q: string) {
   return { contacts };
 }
 
+// Response shape note: GAS's apiCheckLiDuplicate returned
+// { isDuplicate, recruiter, date } and both the Chrome extension
+// (panel.js checkLiDuplicate) and the Recruiter panel read those exact
+// keys. This function previously returned only { duplicate, matches },
+// so every duplicate check silently rendered as "not a duplicate".
+// Emits both shapes: `isDuplicate`/`recruiter`/`date` for GAS parity,
+// `duplicate`/`matches` for the richer webapp display.
 export async function checkLiDuplicate(email: string, li: string) {
   const normalized = normalizeLi(li);
-  if (!normalized) return { duplicate: false, matches: [] };
+  if (!normalized) return { duplicate: false, isDuplicate: false, matches: [], recruiter: "", date: "" };
 
   // Supabase-primary, org-wide (not scoped to this recruiter) — this is the
   // live, immediately-fresh source since Outreach/Nurture saves write here
@@ -692,9 +751,16 @@ export async function checkLiDuplicate(email: string, li: string) {
       name: row.name || "",
       status: row.status || "",
       li: row.linkedin_url || "",
-      client: cleanClientName(row.clients?.name || "")
+      client: cleanClientName(row.clients?.name || ""),
+      recruiter: row.name || ""
     }));
-    return { duplicate: true, matches };
+    return {
+      duplicate: true,
+      isDuplicate: true,
+      matches,
+      recruiter: matches[0].client || matches[0].name || "",
+      date: ""
+    };
   }
 
   const matches: Array<{ name: string; status: string; li: string; recruiter?: string }> = [];
@@ -721,7 +787,13 @@ export async function checkLiDuplicate(email: string, li: string) {
       }
     }
   }
-  return { duplicate: matches.length > 0, matches };
+  return {
+    duplicate: matches.length > 0,
+    isDuplicate: matches.length > 0,
+    matches,
+    recruiter: matches.length ? matches[0].recruiter || matches[0].name || "" : "",
+    date: ""
+  };
 }
 
 export async function getTargetArea(email: string, q: string) {
@@ -742,14 +814,23 @@ export async function getTargetArea(email: string, q: string) {
       const hay = `${salesNavId} ${profileName} ${zip} ${city} ${state}`.toLowerCase();
       if (!hay.includes(search)) continue;
     }
+    // Both key styles are emitted: camelCase is what GAS's apiGetTargetArea
+    // returned and what the Chrome extension's panel.js loadTargetArea reads
+    // (r.profileName / r.salesNavId / r.zip / r.bestTime); the snake_case keys
+    // are kept for existing webapp callers. Dropping either breaks a client.
     results.push({
       assign_date: normalizeDateCell(row[0]) || String(row[0] || "").trim(),
+      assignDate: normalizeDateCell(row[0]) || String(row[0] || "").trim(),
       zip_code: zip,
+      zip,
       city,
       state,
       sales_nav_id: salesNavId,
+      salesNavId,
       profile_name: profileName,
-      best_cst_time: bestTime
+      profileName,
+      best_cst_time: bestTime,
+      bestTime
     });
     if (results.length >= 150) break;
   }
@@ -814,46 +895,113 @@ export async function getNurtureTemplate(email: string, nurtureType: string, cli
   return { ...tpl, body, text: body };
 }
 
-// All-time per-client contact counts, excluding dead leads (Not Interested /
-// Profile Restricted) — mirrors GAS apiGetClientRatio's "allCounts" pass.
-// Supabase-primary (FU Tracker contact data), falling back to a direct Sheet
-// scan only if this recruiter has no Supabase contacts yet.
+type RatioRow = {
+  client: string;
+  count: number;
+  pct: number;
+  todayCount: number;
+  canyBlocked: boolean;
+};
+
+function buildRatioResult(
+  allCounts: Map<string, number>,
+  todayCounts: Map<string, number>,
+  canyBlockedSet: Set<string>
+) {
+  // pct is share-of-total, matching GAS apiGetClientRatio. (A previous
+  // version used count/max, which produced a different number and made the
+  // "least loaded client" suggestion pick the wrong client.)
+  const total = Array.from(allCounts.values()).reduce((sum, n) => sum + n, 0);
+  const ratio: RatioRow[] = [];
+  let minPct = Number.POSITIVE_INFINITY;
+  let suggested = "";
+
+  allCounts.forEach((count, client) => {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    const blocked = canyBlockedSet.has(client);
+    ratio.push({ client, count, pct, todayCount: todayCounts.get(client) || 0, canyBlocked: blocked });
+    if (!blocked && pct < minPct) {
+      minPct = pct;
+      suggested = client;
+    }
+  });
+
+  ratio.sort((a, b) => b.count - a.count);
+
+  return {
+    ratio,
+    suggested,
+    canyBlocked: Array.from(canyBlockedSet),
+    // Retained for existing webapp callers that read `.rows`.
+    rows: ratio
+  };
+}
+
+// Per-client contact distribution used by the Nurture tab's ratio bar and by
+// Rotation's "least loaded client" pick.
+//
+// Response shape matches GAS apiGetClientRatio -- { ratio, suggested,
+// canyBlocked } -- because the Chrome extension's panel.js reads
+// `data.ratio` and `data.suggested` directly. This previously returned only
+// { rows }, so after the extension cutover the ratio bar stayed empty and
+// rotation had no suggestion to work from.
+//
+// Dead leads (Not Interested / Profile Restricted) are excluded so they
+// don't skew rotation fairness, matching GAS.
+//
+// canyBlocked is derived from the recruiter's Daily Assignment "CA+NY Appts"
+// column against CONFIG.canyMax. GAS read a live formula in Master Tracker
+// Col X for this; Daily Assignment carries the same per-client figure and is
+// already loaded here, so this avoids a second cross-spreadsheet read.
 export async function getClientRatio(email: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const clients = (await getClients(email)).clients || [];
+  const canyBlockedSet = new Set<string>(
+    clients
+      .filter((c: ClientAssignment) => {
+        const appts = Number(String(c.canyAppts || "").replace(/[^0-9.-]/g, ""));
+        return Number.isFinite(appts) && appts >= CONFIG.canyMax;
+      })
+      .map((c: ClientAssignment) => c.name)
+  );
+
   const user = await findSupabaseUser(email);
   if (user) {
     const { data: contacts } = await (getSupabaseAdmin() as any)
       .from("contacts")
-      .select("status,clients(name)")
+      .select("status,date_j,clients(name)")
       .eq("recruiter_id", user.id);
     if (contacts && contacts.length) {
-      const totals = new Map<string, number>();
+      const allCounts = new Map<string, number>();
+      const todayCounts = new Map<string, number>();
       contacts.forEach((row: any) => {
         const status = String(row.status || "").trim().toLowerCase();
         if (status === "not interested" || status === "profile restricted") return;
         const client = cleanClientName(row.clients?.name || "");
         if (!client) return;
-        totals.set(client, (totals.get(client) || 0) + 1);
+        allCounts.set(client, (allCounts.get(client) || 0) + 1);
+        const dateJ = String(row.date_j || "").slice(0, 10);
+        if (dateJ === today) todayCounts.set(client, (todayCounts.get(client) || 0) + 1);
       });
-      const entries = Array.from(totals.entries()).map(([client, count]) => ({ client, count }));
-      const max = Math.max(1, ...entries.map((row) => row.count));
-      return { rows: entries.map((row) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
+      return buildRatioResult(allCounts, todayCounts, canyBlockedSet);
     }
   }
 
   const sheet = await getFuSheet(email);
-  if (!sheet) return { rows: [] };
+  if (!sheet) return { ratio: [], suggested: "", canyBlocked: [], rows: [] };
   const rows = await getValues(sheet.spreadsheetId, `${quoteSheetName(sheet.title)}!A2:R`);
-  const totals = new Map<string, number>();
+  const allCounts = new Map<string, number>();
+  const todayCounts = new Map<string, number>();
   for (const row of rows) {
     const status = String(row[FU.STATUS] || "").trim().toLowerCase();
     if (status === "not interested" || status === "profile restricted") continue;
     const client = cleanClientName(String(row[FU.CLIENT] || ""));
     if (!client) continue;
-    totals.set(client, (totals.get(client) || 0) + 1);
+    allCounts.set(client, (allCounts.get(client) || 0) + 1);
+    const dateJ = normalizeDateCell(row[FU.DATE_J]) || String(row[FU.DATE_J] || "").slice(0, 10);
+    if (dateJ === today) todayCounts.set(client, (todayCounts.get(client) || 0) + 1);
   }
-  const entries = Array.from(totals.entries()).map(([client, count]) => ({ client, count }));
-  const max = Math.max(1, ...entries.map((row) => row.count));
-  return { rows: entries.map((row) => ({ ...row, pct: Math.round((row.count / max) * 100) })) };
+  return buildRatioResult(allCounts, todayCounts, canyBlockedSet);
 }
 
 export async function bulkSetCany(email: string, lis: string[]) {

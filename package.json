@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "typecheck:fast": "tsc -p tsconfig.check.json",
     "migrate:sheets": "tsx scripts/migrate-sheets.ts",
     "migrate:sheets:dry": "tsx scripts/migrate-sheets.ts --dry-run",
     "migrate:sheets:fu": "tsx scripts/migrate-sheets.ts --only-fu"
