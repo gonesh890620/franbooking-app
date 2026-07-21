@@ -24,7 +24,11 @@ function StatTile({ label, value, sub, onClick, color }: { label: string; value:
   );
 }
 
-function PeriodTable({ title, rows }: { title: string; rows: Array<{ label: string; counts: Record<PeriodKey, number> }> }) {
+function typeSubNote(counts?: { bdInhouse: number; ph: number }) {
+  return `${counts?.bdInhouse ?? 0} BD/Inhouse · ${counts?.ph ?? 0} PH`;
+}
+
+function PeriodTable({ title, rows }: { title: string; rows: Array<{ label: string; counts: Record<PeriodKey, number | null> }> }) {
   return (
     <div className="table-wrap">
       <table>
@@ -35,7 +39,7 @@ function PeriodTable({ title, rows }: { title: string; rows: Array<{ label: stri
           {rows.map((row) => (
             <tr key={row.label}>
               <td>{row.label}</td>
-              {PERIODS.map((p) => <td key={p.key}>{row.counts[p.key]}</td>)}
+              {PERIODS.map((p) => <td key={p.key}>{row.counts[p.key] ?? "—"}</td>)}
             </tr>
           ))}
         </tbody>
@@ -66,6 +70,8 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [leaveToday, setLeaveToday] = useState<any[]>([]);
   const [leaveTomorrow, setLeaveTomorrow] = useState<any[]>([]);
   const [nurtureFu, setNurtureFu] = useState<any>(null);
+  const [feedbackDate, setFeedbackDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [feedbackRows, setFeedbackRows] = useState<any[] | null>(null);
   const [showTop5, setShowTop5] = useState(false);
   const [showNonProd, setShowNonProd] = useState(false);
   const [s2aRange, setS2aRange] = useState({ startDate: "", endDate: "" });
@@ -109,6 +115,17 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     action({ action: "leaveToday" }).then((r) => setLeaveToday(r.rows || [])).catch(() => {});
     action({ action: "leaveTomorrow" }).then((r) => setLeaveTomorrow(r.rows || [])).catch(() => {});
     action({ action: "nurtureFuStats" }).then(setNurtureFu).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load nurture/FU stats"));
+    void loadFeedbackForDate(feedbackDate);
+  }
+
+  async function loadFeedbackForDate(date: string) {
+    setFeedbackDate(date);
+    try {
+      const payload = await action({ action: "feedbackByDate", date });
+      setFeedbackRows(payload.rows || []);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load feedback");
+    }
   }
 
   async function openReportsTab() {
@@ -400,10 +417,10 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             {!onlineStatus && <div className="muted">Loading...</div>}
             {onlineStatus && (
               <section className="metric-grid">
-                <StatTile label="Online Now" value={onlineStatus.online?.length ?? 0} color="#059669" onClick={() => showRecruiterStatusBucket("online", "Online Now")} />
-                <StatTile label="Offline" value={onlineStatus.offline?.length ?? 0} color="#6b7280" onClick={() => showRecruiterStatusBucket("offline", "Offline")} />
-                <StatTile label="Not Started Today" value={onlineStatus.notStarted?.length ?? 0} color="#dc2626" onClick={() => showRecruiterStatusBucket("notStarted", "Not Started Today")} />
-                <StatTile label="Inactive 5+ Days" value={onlineStatus.inactive5d?.length ?? 0} color="#b45309" onClick={() => showRecruiterStatusBucket("inactive5d", "Inactive 5+ Days")} />
+                <StatTile label="Online Now" value={onlineStatus.online?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.online)} color="#059669" onClick={() => showRecruiterStatusBucket("online", "Online Now")} />
+                <StatTile label="Offline" value={onlineStatus.offline?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.offline)} color="#6b7280" onClick={() => showRecruiterStatusBucket("offline", "Offline")} />
+                <StatTile label="Not Started Today" value={onlineStatus.notStarted?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.notStarted)} color="#dc2626" onClick={() => showRecruiterStatusBucket("notStarted", "Not Started Today")} />
+                <StatTile label="Inactive 5+ Days" value={onlineStatus.inactive5d?.length ?? 0} sub={typeSubNote(onlineStatus.counts?.inactive5d)} color="#b45309" onClick={() => showRecruiterStatusBucket("inactive5d", "Inactive 5+ Days")} />
                 <StatTile label="On Leave Today" value={leaveToday.length} color="#0891b2" onClick={() => showLeaveModal(leaveToday, "On Leave Today")} />
                 <StatTile label="On Leave Tomorrow" value={leaveTomorrow.length} color="#0891b2" onClick={() => showLeaveModal(leaveTomorrow, "On Leave Tomorrow")} />
               </section>
@@ -416,7 +433,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
               title=""
               rows={(["BD/Inhouse", "PH"] as const).map((type) => ({
                 label: type,
-                counts: Object.fromEntries(PERIODS.map((p) => [p.key, s2aByType[type]?.[p.key]?.sendsPerAppt ?? 0])) as Record<PeriodKey, number>
+                counts: Object.fromEntries(PERIODS.map((p) => [p.key, s2aByType[type]?.[p.key]?.sendsPerAppt ?? null])) as Record<PeriodKey, number | null>
               }))}
             />
           </section>
@@ -425,7 +442,13 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             <div className="section-head"><h2>📤 Sends</h2><span className="muted">Click a number to see who sent them</span></div>
             <section className="metric-grid">
               {PERIODS.map((p) => (
-                <StatTile key={p.key} label={p.label} value={sends[p.key] ?? 0} onClick={() => showSendsModal(p.key, p.label)} />
+                <StatTile
+                  key={p.key}
+                  label={p.label}
+                  value={sends[p.key] ?? 0}
+                  sub={`${s2aByType["BD/Inhouse"]?.[p.key]?.sends ?? 0} BD/Inhouse · ${s2aByType.PH?.[p.key]?.sends ?? 0} PH`}
+                  onClick={() => showSendsModal(p.key, p.label)}
+                />
               ))}
             </section>
           </section>
@@ -515,15 +538,42 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           <section className="panel">
             <div className="section-head"><h2>📝 Daily Feedback</h2></div>
-            <div className="compact-list">
-              {unreviewedFeedback.map((f: any) => (
-                <div className="compact-row" key={f.id}>
-                  <strong>{f.name}</strong>
-                  <span>{f.salesnav_all ? "All Sales Nav" : `${f.salesnav_no_count} not working — ${f.salesnav_no_reason}`} | {f.responses_today || 0} responses | {f.comments || f.unusual}</span>
-                  <button className="btn btn-outline" onClick={() => doAction({ action: "markFeedbackReviewed", id: f.id })}>Reviewed</button>
-                </div>
-              ))}
-              {unreviewedFeedback.length === 0 && <div className="muted">Nothing to review.</div>}
+            <div className="actions" style={{ marginBottom: 10 }}>
+              <label>Date<input type="date" value={feedbackDate} onChange={(e) => setFeedbackDate(e.target.value)} /></label>
+              <button className="btn btn-outline" onClick={() => loadFeedbackForDate(feedbackDate)}>Apply</button>
+              <button className="btn btn-outline" onClick={() => loadFeedbackForDate(new Date().toISOString().slice(0, 10))}>Today</button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Name</th><th>All Sales Nav</th><th>Unusual Activity</th><th>Responses Today</th><th>Additional Comments</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {(feedbackRows || []).map((f: any) => (
+                    <tr key={f.id}>
+                      <td>{f.submitted_date}</td>
+                      <td>{f.name}</td>
+                      <td>{f.salesnav_all ? "Yes" : `No — ${f.salesnav_no_count ?? 0} (${f.salesnav_no_reason || "—"})`}</td>
+                      <td>{f.unusual || "—"}</td>
+                      <td>{f.responses_today ?? 0}</td>
+                      <td>{f.comments || "—"}</td>
+                      <td>
+                        {f.reviewed ? (
+                          <span className="badge">Reviewed</span>
+                        ) : (
+                          <button className="btn btn-outline" onClick={async () => { await action({ action: "markFeedbackReviewed", id: f.id }); await loadFeedbackForDate(feedbackDate); }}>Mark Reviewed</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {feedbackRows && feedbackRows.length === 0 && (
+                    <tr><td colSpan={7} className="muted">No feedback submitted for this date.</td></tr>
+                  )}
+                  {!feedbackRows && (
+                    <tr><td colSpan={7} className="muted">Loading…</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         </>

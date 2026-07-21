@@ -201,14 +201,17 @@ export async function getGrowthDashboard() {
 
   // --- S2A by type (aggregate volume, not averaged per-recruiter) ---
   const periodKeys: Array<keyof PeriodCounts> = ["today", "yesterday", "last7", "last14", "last28"];
-  const s2aByType = { "BD/Inhouse": {} as Record<string, { s2a: number; sendsPerAppt: number; appts: number; sends: number }>, PH: {} as Record<string, { s2a: number; sendsPerAppt: number; appts: number; sends: number }> };
+  const s2aByType = { "BD/Inhouse": {} as Record<string, { s2a: number; sendsPerAppt: number | null; appts: number; sends: number }>, PH: {} as Record<string, { s2a: number; sendsPerAppt: number | null; appts: number; sends: number }> };
   (["BD/Inhouse", "PH"] as const).forEach((type) => {
     periodKeys.forEach((period) => {
       const a = apptsByType[type][period];
       const s = sendsByType[type][period];
       // "Sends per appointment" (GAS's S2A-by-type tile) is deliberately
       // sends/appts, distinct from the appts/sends S2A% used elsewhere.
-      s2aByType[type][period] = { appts: a, sends: s, s2a: s > 0 ? Math.round((a / s) * 100) : 0, sendsPerAppt: a > 0 ? Math.round(s / a) : s };
+      // null (rendered "—") when there were no sends at all — a real "no
+      // activity yet" state, not a meaningful zero ratio.
+      const sendsPerAppt = s === 0 ? null : a > 0 ? Math.round(s / a) : s;
+      s2aByType[type][period] = { appts: a, sends: s, s2a: s > 0 ? Math.round((a / s) * 100) : 0, sendsPerAppt };
     });
   });
 
@@ -271,7 +274,17 @@ export async function getRecruiterOnlineStatus() {
     if (!entry.lastSeenMs || now - entry.lastSeenMs > fiveDaysMs) buckets.inactive5d.push(row);
   });
   (Object.keys(buckets) as Array<keyof typeof buckets>).forEach((key) => buckets[key].sort((a, b2) => a.name.localeCompare(b2.name)));
-  return buckets;
+
+  // Per-bucket BD/Inhouse vs PH breakdown, shown as each tile's sub-note.
+  const counts: Record<string, { bdInhouse: number; ph: number }> = {};
+  (Object.keys(buckets) as Array<keyof typeof buckets>).forEach((key) => {
+    counts[key] = {
+      bdInhouse: buckets[key].filter((row: any) => row.type === "BD/Inhouse").length,
+      ph: buckets[key].filter((row: any) => row.type === "PH").length
+    };
+  });
+
+  return { ...buckets, counts };
 }
 
 async function recruitersOnLeaveForDate(dateStr: string) {
@@ -292,6 +305,19 @@ async function recruitersOnLeaveForDate(dateStr: string) {
 
 export async function getRecruitersOnLeave() {
   return recruitersOnLeaveForDate(dayKey(new Date()));
+}
+
+// Daily Feedback table — matches GAS apiCeoGetFeedbackSubmissions(email,
+// dateStr): submissions for one specific date, unreviewed only.
+export async function getFeedbackForDate(dateStr: string) {
+  const targetDate = dateStr || dayKey(new Date());
+  const { data } = await (getSupabaseAdmin() as any)
+    .from("daily_feedback")
+    .select("*")
+    .eq("submitted_date", targetDate)
+    .eq("reviewed", false)
+    .order("created_at", { ascending: false });
+  return { rows: data || [] };
 }
 
 // Wait List tile drilldown — matches GAS apiCeoGetWaitList. This is the
