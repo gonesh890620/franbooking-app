@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import BodyClass from "./BodyClass";
-import { AppHeader } from "./ui";
+import { AppHeader, Badge, Card, DataTable, EmptyRow, Field, Modal, Msg } from "./ui";
 
 type ChatTurn = { role: "user" | "assistant"; text: string };
 type PeriodKey = "today" | "yesterday" | "last7" | "last14" | "last28";
@@ -316,6 +316,59 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [reportsLoaded, setReportsLoaded] = useState(false);
   const [directory, setDirectory] = useState<any>(null);
   const [directorySort, setDirectorySort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "sendsYesterday", dir: "desc" });
+  const [reportTab, setReportTab] = useState<"billing" | "directory">("billing");
+  const [billingLoaded, setBillingLoaded] = useState(false);
+  const [billingRows, setBillingRows] = useState<any[]>([]);
+  const [billingSearch, setBillingSearch] = useState("");
+  const [billingCycleFilter, setBillingCycleFilter] = useState("");
+
+  // ── Vendor Management ────────────────────────────────────────────────────
+  const [vendorsLoaded, setVendorsLoaded] = useState(false);
+  const [vendorProfiles, setVendorProfiles] = useState<any[]>([]);
+  const [vendorIssues, setVendorIssues] = useState<any[]>([]);
+  const [vendorsList, setVendorsList] = useState<any[]>([]);
+  const [vendorOrders, setVendorOrders] = useState<any[]>([]);
+  const [vendorSummary, setVendorSummary] = useState<any[]>([]);
+  const [vendorIssueTypes, setVendorIssueTypes] = useState<string[]>([]);
+  const [vendorBdRoster, setVendorBdRoster] = useState<Array<{ email: string; name: string; type: string }>>([]);
+  const [vmMsg, setVmMsg] = useState<{ text: string; kind: "error" | "success" } | null>(null);
+  const [vmProfilesFilter, setVmProfilesFilter] = useState<"all" | "active" | "issue">("all");
+  const [vmProfilesSearch, setVmProfilesSearch] = useState("");
+  const [vmOrdersPendingOnly, setVmOrdersPendingOnly] = useState(false);
+  const [vmIssuesUnresolvedOnly, setVmIssuesUnresolvedOnly] = useState(true);
+  const [vendorStatsIdx, setVendorStatsIdx] = useState<number | null>(null);
+  const [vendorModal, setVendorModal] = useState<null | "profile" | "renew" | "vendor" | "order" | "comm" | "issue" | "followUp" | "feedback" | "replace">(null);
+
+  const emptyVpForm = { id: "", name: "", vendor: "", liUrl: "", price: "", registered: "", snConnected: "", managedBy: "", status: "Active", notes: "" };
+  const [vpForm, setVpForm] = useState(emptyVpForm);
+  const [vrnForm, setVrnForm] = useState({ profileId: "", lastRenewed: new Date().toISOString().slice(0, 10), status: "Active", notes: "" });
+  const emptyVnForm = { id: "", name: "", contact: "", email: "", slack: "", channel: "", notes: "" };
+  const [vnForm, setVnForm] = useState(emptyVnForm);
+  const emptyVoForm = { id: "", vendor: "", requestedBy: "", profileName: "", profileUrl: "", connections: "", location: "", orderDate: new Date().toISOString().slice(0, 10), price: "", notes: "" };
+  const [voForm, setVoForm] = useState(emptyVoForm);
+  const [vcmForm, setVcmForm] = useState({ vendor: "", date: new Date().toISOString().slice(0, 10), channel: "", note: "" });
+  const [viForm, setViForm] = useState({ profileId: "", vendor: "", issueType: "", reportedDate: new Date().toISOString().slice(0, 10), notes: "" });
+  const [vfuVendor, setVfuVendor] = useState("");
+  const [vfForm, setVfForm] = useState({ issueId: "", date: new Date().toISOString().slice(0, 10), text: "", eta: "" });
+  const [vrForm, setVrForm] = useState({ oldProfileId: "", issueId: "", name: "", vendor: "", liUrl: "", price: "", registered: new Date().toISOString().slice(0, 10), snConnected: "", managedBy: "", notes: "" });
+
+  // ── Recruiter Payments + Wise ────────────────────────────────────────────
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
+  const [paymentRows, setPaymentRows] = useState<any[]>([]);
+  const [paymentCycleFilter, setPaymentCycleFilter] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [invoiceModal, setInvoiceModal] = useState<{ email: string; cycleKey: string; name: string; cycleLabel: string } | null>(null);
+  const [invoiceId, setInvoiceId] = useState("");
+  const [wiseModal, setWiseModal] = useState(false);
+  const [wiseRoster, setWiseRoster] = useState<any[]>([]);
+  const [wiseSelected, setWiseSelected] = useState("");
+  const [wiseAccount, setWiseAccount] = useState("");
+
+  // ── Recurring Tasks ──────────────────────────────────────────────────────
+  const [recurringModal, setRecurringModal] = useState(false);
+  const [recurringRows, setRecurringRows] = useState<any[]>([]);
+  const [recurringForm, setRecurringForm] = useState({ title: "", description: "", topic: "", priority: "Medium", daysOfMonth: "", assignedEmail: "", assignedName: "" });
+  const [recurringMsg, setRecurringMsg] = useState<{ text: string; kind: "error" | "success" } | null>(null);
 
   async function reload() {
     const res = await fetch("/api/growth");
@@ -368,6 +421,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     if (reportsLoaded) return;
     setReportsLoaded(true);
     action({ action: "recruiterDirectory" }).then(setDirectory).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load recruiter directory"));
+    action({ action: "recruiterBillingReport" }).then((p) => { setBillingRows(p.rows || []); setBillingLoaded(true); }).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load billing report"));
   }
 
   function toggleDirectorySort(key: string) {
@@ -381,6 +435,295 @@ export default function GrowthConsole({ session, initial, loadError }: { session
     if (typeof av === "string") return av.localeCompare(cv) * dir;
     return ((av ?? 0) - (cv ?? 0)) * dir;
   });
+
+  const billingCycles = Array.from(new Set(billingRows.map((r) => r.cycleLabel))).filter(Boolean);
+  const filteredBillingRows = billingRows.filter((r) => {
+    if (billingSearch && !String(r.name || "").toLowerCase().includes(billingSearch.toLowerCase())) return false;
+    if (billingCycleFilter && r.cycleLabel !== billingCycleFilter) return false;
+    return true;
+  }).sort((a, b) => (billingCycleFilter ? (b.appts || 0) - (a.appts || 0) : 0));
+
+  function exportBillingCsv() {
+    const headers = ["Recruiter", "Type", "Age", "Billing Cycle", "Appts", "Sends"];
+    const lines = [headers.map(csvEscape).join(",")];
+    filteredBillingRows.forEach((r) => lines.push([r.name, r.type || "", r.workingAgeDays ?? "", r.cycleLabel, r.appts, r.sends].map(csvEscape).join(",")));
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `billing_cycle_report${billingCycleFilter ? "_" + billingCycleFilter.replace(/[^a-z0-9]+/gi, "_") : ""}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Vendor Management ────────────────────────────────────────────────────
+  async function openVendorsTab() {
+    setTab("vendors");
+    if (vendorsLoaded) return;
+    setVendorsLoaded(true);
+    action({ action: "vendorData" }).then((data) => {
+      setVendorProfiles(data.profiles || []);
+      setVendorIssues(data.issues || []);
+      setVendorsList(data.vendors || []);
+      setVendorOrders(data.orders || []);
+      setVendorSummary(data.vendorSummary || []);
+      setVendorIssueTypes(data.issueTypes || []);
+    }).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load vendor data"));
+    action({ action: "recruiterRosterForPayment" }).then((p) => setVendorBdRoster((p.roster || []).filter((r: any) => r.type === "BD/Inhouse"))).catch(() => {});
+  }
+
+  async function reloadVendorData() {
+    try {
+      const data = await action({ action: "vendorData" });
+      setVendorProfiles(data.profiles || []);
+      setVendorIssues(data.issues || []);
+      setVendorsList(data.vendors || []);
+      setVendorOrders(data.orders || []);
+      setVendorSummary(data.vendorSummary || []);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not reload vendor data");
+    }
+  }
+
+  function vmFail(e: unknown) {
+    setVmMsg({ text: e instanceof Error ? e.message : "Action failed", kind: "error" });
+  }
+
+  function openAddProfile() { setVpForm(emptyVpForm); setVmMsg(null); setVendorModal("profile"); }
+  function openEditProfile(p: any) {
+    setVpForm({ id: p.id, name: p.name, vendor: p.vendor, liUrl: p.liProfileUrl || "", price: p.price || "", registered: p.registeredDate || "", snConnected: p.snConnectedDate || "", managedBy: p.managedBy || "", status: p.status === "Retired" ? "Retired" : "Active", notes: p.notes || "" });
+    setVmMsg(null);
+    setVendorModal("profile");
+  }
+  async function saveVpForm() {
+    if (!vpForm.name.trim() || !vpForm.vendor.trim()) { setVmMsg({ text: "Profile Name and Vendor Name are required.", kind: "error" }); return; }
+    try {
+      const data = { name: vpForm.name, vendor: vpForm.vendor, liProfileUrl: vpForm.liUrl, price: vpForm.price, registeredDate: vpForm.registered, snConnectedDate: vpForm.snConnected, managedBy: vpForm.managedBy, notes: vpForm.notes, status: vpForm.id ? vpForm.status : "Active" };
+      const payload = vpForm.id ? await action({ action: "updateVendorProfile", profileId: vpForm.id, data }) : await action({ action: "addVendorProfile", data });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  function openRenewProfile(profileId: string) { setVrnForm({ profileId, lastRenewed: new Date().toISOString().slice(0, 10), status: "Active", notes: "" }); setVmMsg(null); setVendorModal("renew"); }
+  async function saveRenewProfile() {
+    try {
+      const payload = await action({ action: "updateVendorProfile", profileId: vrnForm.profileId, data: { lastRenewedDate: vrnForm.lastRenewed, status: vrnForm.status, notes: vrnForm.notes } });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  function openAddVendor() { setVnForm(emptyVnForm); setVmMsg(null); setVendorModal("vendor"); }
+  function openEditVendor(v: any) { setVnForm({ id: v.id, name: v.name, contact: v.contactPerson || "", email: v.email || "", slack: v.slack || "", channel: v.channel || "", notes: v.notes || "" }); setVmMsg(null); setVendorModal("vendor"); }
+  async function saveVnForm() {
+    if (!vnForm.name.trim()) { setVmMsg({ text: "Vendor Name is required.", kind: "error" }); return; }
+    try {
+      const data = { name: vnForm.name, contactPerson: vnForm.contact, email: vnForm.email, slack: vnForm.slack, channel: vnForm.channel, notes: vnForm.notes };
+      const payload = vnForm.id ? await action({ action: "updateVendor", vendorId: vnForm.id, data }) : await action({ action: "addVendor", data });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  function openLogOrder() { setVoForm(emptyVoForm); setVmMsg(null); setVendorModal("order"); }
+  function openEditOrder(o: any) { setVoForm({ id: o.id, vendor: o.vendor, requestedBy: o.requestedBy || "", profileName: o.profileName || "", profileUrl: o.profileUrl || "", connections: o.connections || "", location: o.location || "", orderDate: o.orderDate || "", price: o.price || "", notes: o.notes || "" }); setVmMsg(null); setVendorModal("order"); }
+  async function saveVoForm() {
+    if (!voForm.vendor.trim()) { setVmMsg({ text: "Vendor is required.", kind: "error" }); return; }
+    try {
+      const data = { vendor: voForm.vendor, requestedBy: voForm.requestedBy, profileName: voForm.profileName, profileUrl: voForm.profileUrl, connections: voForm.connections, location: voForm.location, orderDate: voForm.orderDate, price: voForm.price, notes: voForm.notes };
+      const payload = voForm.id ? await action({ action: "updateVendorOrder", orderId: voForm.id, data }) : await action({ action: "addVendorOrder", data });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+  async function markOrderReceived(orderId: string) {
+    if (!window.confirm("Mark this order as received? Received Date will be stamped today unless you edit it first.")) return;
+    try { await action({ action: "updateVendorOrder", orderId, data: { status: "Received" } }); await reloadVendorData(); } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+  async function cancelOrder(orderId: string) {
+    if (!window.confirm("Cancel this order?")) return;
+    try { await action({ action: "updateVendorOrder", orderId, data: { status: "Cancelled" } }); await reloadVendorData(); } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+
+  function openLogComm() { setVcmForm({ vendor: "", date: new Date().toISOString().slice(0, 10), channel: "", note: "" }); setVmMsg(null); setVendorModal("comm"); }
+  async function saveVcmForm() {
+    if (!vcmForm.vendor.trim() || !vcmForm.note.trim()) { setVmMsg({ text: "Vendor and Note are required.", kind: "error" }); return; }
+    try {
+      const payload = await action({ action: "logVendorCommunication", data: vcmForm });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+    } catch (e) { vmFail(e); }
+  }
+
+  function openLogIssue(profileId?: string) { setViForm({ profileId: profileId || "", vendor: "", issueType: "", reportedDate: new Date().toISOString().slice(0, 10), notes: "" }); setVmMsg(null); setVendorModal("issue"); }
+  async function saveViForm() {
+    if (!viForm.profileId && !viForm.vendor.trim()) { setVmMsg({ text: "Select a profile or a vendor.", kind: "error" }); return; }
+    if (!viForm.issueType) { setVmMsg({ text: "Issue type is required.", kind: "error" }); return; }
+    try {
+      const payload = await action({ action: "logVendorIssue", profileId: viForm.profileId, data: { vendor: viForm.vendor, issueType: viForm.issueType, reportedDate: viForm.reportedDate, issueNotes: viForm.notes } });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+  async function followUpVendorIssue(issueId: string) {
+    try { await action({ action: "logVendorIssueFollowUp", issueId }); await reloadVendorData(); } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+  async function markVendorIssueSolved(issueId: string) {
+    if (!window.confirm("Mark this issue solved?")) return;
+    try { await action({ action: "updateVendorIssue", issueId, data: { solved: "Yes" } }); await reloadVendorData(); } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+
+  function openVendorFollowUp() { setVfuVendor(""); setVmMsg(null); setVendorModal("followUp"); }
+  async function generateVendorFollowUp() {
+    if (!vfuVendor) { setVmMsg({ text: "Select a vendor.", kind: "error" }); return; }
+    const openIssues = vendorIssues.filter((iss) => iss.solved !== "Yes" && (vendorProfiles.find((p) => p.id === iss.profileId)?.vendor === vfuVendor || iss.vendor === vfuVendor));
+    if (!openIssues.length) { setVmMsg({ text: "No open issues for this vendor.", kind: "error" }); return; }
+    try {
+      const payload = await action({ action: "logVendorFollowUpBulk", issueIds: openIssues.map((iss) => iss.id) });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      const lines = openIssues.map((iss) => `• ${iss.issueType}${iss.issueNotes ? " — " + iss.issueNotes : ""}`);
+      const text = `Hi ${vfuVendor}, following up on ${openIssues.length} open issue(s):\n\n${lines.join("\n")}\n\nCan you share an update?`;
+      await navigator.clipboard.writeText(text);
+      setVmMsg({ text: `Follow-up logged on ${payload.updated} issue(s) and message copied to clipboard.`, kind: "success" });
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  function openVfModal(issueId: string) { setVfForm({ issueId, date: new Date().toISOString().slice(0, 10), text: "", eta: "" }); setVmMsg(null); setVendorModal("feedback"); }
+  async function saveVfForm() {
+    try {
+      const payload = await action({ action: "updateVendorIssue", issueId: vfForm.issueId, data: { vendorFeedbackDate: vfForm.date, vendorFeedback: vfForm.text, vendorEta: vfForm.eta } });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  function openReplaceProfile(oldProfileId: string, issueId?: string) {
+    const old = vendorProfiles.find((p) => p.id === oldProfileId);
+    setVrForm({ oldProfileId, issueId: issueId || "", name: "", vendor: "", liUrl: "", price: "", registered: new Date().toISOString().slice(0, 10), snConnected: "", managedBy: "", notes: "" });
+    setVmMsg(null);
+    void old;
+    setVendorModal("replace");
+  }
+  async function saveVrForm() {
+    if (!vrForm.name.trim()) { setVmMsg({ text: "New profile name is required.", kind: "error" }); return; }
+    try {
+      const data = { name: vrForm.name, vendor: vrForm.vendor, liProfileUrl: vrForm.liUrl, price: vrForm.price, registeredDate: vrForm.registered, snConnectedDate: vrForm.snConnected, managedBy: vrForm.managedBy, notes: vrForm.notes };
+      const payload = await action({ action: "replaceVendorProfile", oldProfileId: vrForm.oldProfileId, data, issueId: vrForm.issueId || undefined });
+      if (payload.error) { setVmMsg({ text: payload.error, kind: "error" }); return; }
+      setVendorModal(null);
+      await reloadVendorData();
+    } catch (e) { vmFail(e); }
+  }
+
+  const filteredVendorProfiles = vendorProfiles.filter((p) => {
+    if (vmProfilesFilter === "active" && p.health !== "OK") return false;
+    if (vmProfilesFilter === "issue" && !(p.openIssueCount > 0)) return false;
+    if (!vmProfilesSearch.trim()) return true;
+    const q = vmProfilesSearch.trim().toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.vendor.toLowerCase().includes(q) || (p.managedBy || "").toLowerCase().includes(q);
+  });
+  const filteredVendorOrders = vendorOrders.filter((o) => !vmOrdersPendingOnly || o.status === "Ordered");
+  const filteredVendorIssues = vendorIssues.filter((iss) => !vmIssuesUnresolvedOnly || iss.solved !== "Yes")
+    .slice().sort((a, b) => (b.reportedDate || "").localeCompare(a.reportedDate || ""));
+  const vendorProfileById = new Map(vendorProfiles.map((p) => [p.id, p]));
+
+  function vendorHealthTone(p: any): "green" | "yellow" | "red" | "gray" {
+    if (p.health === "Replaced") return "gray";
+    if (p.openIssueCount > 0) return "red";
+    if (p.health === "Expiring Soon" || p.health === "Sales Nav Expired") return "yellow";
+    return "green";
+  }
+
+  // ── Recruiter Payments + Wise ────────────────────────────────────────────
+  async function openFinanceTab() {
+    setTab("finance");
+    if (paymentsLoaded) return;
+    setPaymentsLoaded(true);
+    action({ action: "recruiterPaymentsReport" }).then((p) => setPaymentRows(p.rows || [])).catch((e) => setMessage(e instanceof Error ? e.message : "Could not load recruiter payments"));
+  }
+  const paymentCycles = Array.from(new Set(paymentRows.map((r) => r.cycleLabel))).filter(Boolean);
+  const filteredPaymentRows = paymentRows.filter((r) => {
+    if (paymentSearch && !String(r.name || "").toLowerCase().includes(paymentSearch.toLowerCase())) return false;
+    if (paymentCycleFilter && r.cycleLabel !== paymentCycleFilter) return false;
+    return true;
+  });
+  function openInvoiceModal(row: any) { setInvoiceModal({ email: row.email, cycleKey: row.cycleKey, name: row.name, cycleLabel: row.cycleLabel }); setInvoiceId(""); }
+  async function saveMarkPaid() {
+    if (!invoiceModal) return;
+    if (!invoiceId.trim()) { setMessage("Invoice ID is required."); return; }
+    try {
+      const payload = await action({ action: "markRecruiterPaid", recruiterEmail: invoiceModal.email, cycleKey: invoiceModal.cycleKey, invoiceId });
+      if (payload.error) { setMessage(payload.error); return; }
+      setInvoiceModal(null);
+      const p = await action({ action: "recruiterPaymentsReport" });
+      setPaymentRows(p.rows || []);
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+  async function openWiseModal() {
+    setWiseModal(true);
+    setWiseSelected("");
+    setWiseAccount("");
+    try {
+      const payload = await action({ action: "recruiterRosterForPayment" });
+      setWiseRoster(payload.roster || []);
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Could not load recruiter roster"); }
+  }
+  function selectWiseRecruiter(email: string) {
+    setWiseSelected(email);
+    setWiseAccount(wiseRoster.find((r) => r.email === email)?.wiseAccount || "");
+  }
+  async function saveWiseAccount() {
+    if (!wiseSelected) { setMessage("Select a recruiter."); return; }
+    try {
+      await action({ action: "setRecruiterWiseAccount", recruiterEmail: wiseSelected, wiseAccount });
+      setWiseModal(false);
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+
+  // ── Recurring Tasks ──────────────────────────────────────────────────────
+  async function openRecurringModal() {
+    setRecurringModal(true);
+    setRecurringMsg(null);
+    try {
+      const payload = await action({ action: "recurringTasks" });
+      setRecurringRows(payload.rows || []);
+    } catch (e) { setRecurringMsg({ text: e instanceof Error ? e.message : "Could not load recurring tasks", kind: "error" }); }
+  }
+  async function saveRecurringTask() {
+    if (!recurringForm.title.trim()) { setRecurringMsg({ text: "Title is required.", kind: "error" }); return; }
+    if (!recurringForm.daysOfMonth.trim()) { setRecurringMsg({ text: "Days of Month is required (e.g. 1,16).", kind: "error" }); return; }
+    try {
+      const payload = await action({ action: "addRecurringTask", data: recurringForm });
+      if (payload.error) { setRecurringMsg({ text: payload.error, kind: "error" }); return; }
+      setRecurringForm({ title: "", description: "", topic: "", priority: "Medium", daysOfMonth: "", assignedEmail: "", assignedName: "" });
+      const rows = await action({ action: "recurringTasks" });
+      setRecurringRows(rows.rows || []);
+    } catch (e) { setRecurringMsg({ text: e instanceof Error ? e.message : "Action failed", kind: "error" }); }
+  }
+  async function toggleRecurring(id: string, active: boolean) {
+    try {
+      await action({ action: "toggleRecurringTask", id, active });
+      const rows = await action({ action: "recurringTasks" });
+      setRecurringRows(rows.rows || []);
+    } catch (e) { setRecurringMsg({ text: e instanceof Error ? e.message : "Action failed", kind: "error" }); }
+  }
+  async function checkRecurringNow() {
+    try {
+      const payload = await action({ action: "runRecurringCheck" });
+      setRecurringMsg({ text: `Created ${payload.created} task(s).`, kind: "success" });
+      await reload();
+    } catch (e) { setRecurringMsg({ text: e instanceof Error ? e.message : "Action failed", kind: "error" }); }
+  }
 
   async function loadS2ARange(startDate: string, endDate: string) {
     setS2aRange({ startDate, endDate });
@@ -563,7 +906,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                 <div className="text-muted">Per-client Calendly funnel from Google Analytics — Views, Select Time, Booked, Drop Off</div>
               </span>
             </button>
-            <button className="section-tile" onClick={() => setTab("finance")}>
+            <button className="section-tile" onClick={openFinanceTab}>
               <span className="section-tile-icon">💰</span>
               <span>
                 <div className="section-tile-title">Finance <span className="text-muted" style={{ fontWeight: 400 }}>(Cost &amp; Payments)</span></div>
@@ -577,7 +920,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                 <div className="text-muted">Billing cycle trends per recruiter, plus a Recruiter Directory of all-time appts, sends &amp; Sales Nav seats</div>
               </span>
             </button>
-            <button className="section-tile" onClick={() => setTab("vendors")}>
+            <button className="section-tile" onClick={openVendorsTab}>
               <span className="section-tile-icon">🏬</span>
               <span>
                 <div className="section-tile-title">Vendor Management</div>
@@ -1098,31 +1441,100 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "finance" && (
-        <section className="row-auto">
-          <div className="card">
-            <h2>💵 Add Cost</h2>
-            <div className="form-row">
-              <input placeholder="Amount" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
-              <input placeholder="Description" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
-              <textarea placeholder="Notes" value={cost.notes} onChange={(e) => setCost({ ...cost, notes: e.target.value })} />
-              <button className="btn btn-primary" onClick={() => doAction({ action: "addCost", ...cost })}>Add Cost</button>
+        <>
+          <section className="row-auto">
+            <div className="card">
+              <h2>💵 Add Cost</h2>
+              <div className="form-row">
+                <input placeholder="Amount" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
+                <input placeholder="Description" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
+                <textarea placeholder="Notes" value={cost.notes} onChange={(e) => setCost({ ...cost, notes: e.target.value })} />
+                <button className="btn btn-primary" onClick={() => doAction({ action: "addCost", ...cost })}>Add Cost</button>
+              </div>
             </div>
-          </div>
-          <div className="card">
-            <h2>🧾 Add Client Payment</h2>
-            <div className="form-row">
-              <input placeholder="Client" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
-              <input placeholder="Total Billed" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
-              <input placeholder="Invoice Ref" value={payment.invoiceRef} onChange={(e) => setPayment({ ...payment, invoiceRef: e.target.value })} />
-              <button className="btn btn-primary" onClick={() => doAction({ action: "addPayment", ...payment })}>Add Payment</button>
+            <div className="card">
+              <h2>🧾 Add Client Payment</h2>
+              <div className="form-row">
+                <input placeholder="Client" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
+                <input placeholder="Total Billed" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
+                <input placeholder="Invoice Ref" value={payment.invoiceRef} onChange={(e) => setPayment({ ...payment, invoiceRef: e.target.value })} />
+                <button className="btn btn-primary" onClick={() => doAction({ action: "addPayment", ...payment })}>Add Payment</button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+
+          <Card
+            title="💸 Recruiter Payments"
+            actions={<button className="btn btn-outline btn-sm" onClick={openWiseModal}>💳 Update Recruiter Wise Email</button>}
+          >
+            <div className="row-auto" style={{ marginBottom: 8 }}>
+              <input placeholder="Filter by recruiter name…" value={paymentSearch} onChange={(e) => setPaymentSearch(e.target.value)} />
+              <select value={paymentCycleFilter} onChange={(e) => setPaymentCycleFilter(e.target.value)}>
+                <option value="">All Billing Cycles</option>
+                {paymentCycles.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            {!paymentsLoaded && <div className="text-muted">Loading…</div>}
+            {paymentsLoaded && (
+              <DataTable head={[
+                { key: "name", label: "Recruiter" }, { label: "Type" }, { label: "Cycle" },
+                { label: "Own Appts" }, { label: "Own Bill" }, { label: "Referral Appts" }, { label: "Referral Bill" },
+                { label: "Total" }, { label: "Wise/Payoneer" }, { label: "Status" }
+              ]}>
+                {filteredPaymentRows.map((r) => (
+                  <tr key={`${r.email}|${r.cycleKey}`}>
+                    <td>{r.name}</td>
+                    <td>{r.type}</td>
+                    <td>{r.cycleLabel}</td>
+                    <td>{r.ownAppts}</td>
+                    <td>${r.ownBill}</td>
+                    <td>{r.referralAppts}</td>
+                    <td>${r.referralBill}</td>
+                    <td><strong>${r.totalBill}</strong></td>
+                    <td>{r.wiseAccount || "—"}</td>
+                    <td>
+                      {r.paid ? <Badge tone="green">Paid #{r.invoiceId}</Badge> : (
+                        <button className="btn btn-primary btn-sm" onClick={() => openInvoiceModal(r)}>Mark Paid</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {filteredPaymentRows.length === 0 && <EmptyRow colSpan={10}>No recruiter/cycle rows match.</EmptyRow>}
+              </DataTable>
+            )}
+          </Card>
+
+          {invoiceModal && (
+            <Modal title={`Mark Paid — ${invoiceModal.name} (${invoiceModal.cycleLabel})`} onClose={() => setInvoiceModal(null)} narrow
+              footer={<>
+                <button className="btn btn-primary" onClick={saveMarkPaid}>Save</button>
+                <button className="btn btn-outline" onClick={() => setInvoiceModal(null)}>Cancel</button>
+              </>}>
+              <Field label="Invoice ID"><input value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} /></Field>
+            </Modal>
+          )}
+
+          {wiseModal && (
+            <Modal title="Update Recruiter Wise Email" onClose={() => setWiseModal(false)} narrow
+              footer={<>
+                <button className="btn btn-primary" onClick={saveWiseAccount}>Save</button>
+                <button className="btn btn-outline" onClick={() => setWiseModal(false)}>Cancel</button>
+              </>}>
+              <Field label="Recruiter">
+                <select value={wiseSelected} onChange={(e) => selectWiseRecruiter(e.target.value)}>
+                  <option value="">Select a recruiter…</option>
+                  {wiseRoster.map((r) => <option key={r.email} value={r.email}>{r.name} ({r.type})</option>)}
+                </select>
+              </Field>
+              <Field label="Wise / Payoneer Account"><input value={wiseAccount} onChange={(e) => setWiseAccount(e.target.value)} placeholder="Email or account handle" /></Field>
+            </Modal>
+          )}
+        </>
       )}
 
       {tab === "tasks" && (
         <section className="card">
-          <h2>📋 Daily Task</h2>
+          <div className="card-header"><h2>📋 Daily Task</h2><button className="btn btn-outline btn-sm" onClick={openRecurringModal}>🔁 Manage Recurring Tasks</button></div>
           <div className="row-auto">
             <input placeholder="Title" value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} />
             <input placeholder="Topic" value={task.topic} onChange={(e) => setTask({ ...task, topic: e.target.value })} />
@@ -1147,6 +1559,32 @@ export default function GrowthConsole({ session, initial, loadError }: { session
               </div>
             ))}
           </div>
+
+          {recurringModal && (
+            <Modal title="Manage Recurring Tasks" onClose={() => setRecurringModal(false)}>
+              {recurringMsg && <Msg kind={recurringMsg.kind}>{recurringMsg.text}</Msg>}
+              <div className="card-header" style={{ marginTop: 0 }}><h2 style={{ fontSize: 13 }}>Existing Recurring Tasks</h2><button className="btn btn-outline btn-sm" onClick={checkRecurringNow}>🔄 Check Now</button></div>
+              <div className="task-list">
+                {recurringRows.map((r) => (
+                  <div className="flex-between" style={{ padding: "8px 0", borderBottom: "1px solid #f0f0f0" }} key={r.id}>
+                    <strong>{r.title}</strong>
+                    <span className="text-muted">Days: {r.daysOfMonth} · {r.assignedName}</span>
+                    <button className="btn btn-outline btn-sm" onClick={() => toggleRecurring(r.id, !r.active)}>{r.active ? "Pause" : "Resume"}</button>
+                  </div>
+                ))}
+                {recurringRows.length === 0 && <div className="text-muted">No recurring tasks yet.</div>}
+              </div>
+              <div className="card-header" style={{ marginTop: 16 }}><h2 style={{ fontSize: 13 }}>Add New Recurring Task</h2></div>
+              <div className="row-auto">
+                <input placeholder="Title" value={recurringForm.title} onChange={(e) => setRecurringForm({ ...recurringForm, title: e.target.value })} />
+                <input placeholder="Topic" value={recurringForm.topic} onChange={(e) => setRecurringForm({ ...recurringForm, topic: e.target.value })} />
+                <select value={recurringForm.priority} onChange={(e) => setRecurringForm({ ...recurringForm, priority: e.target.value })}><option>High</option><option>Medium</option><option>Low</option></select>
+                <input placeholder="Days of Month (e.g. 1,16)" value={recurringForm.daysOfMonth} onChange={(e) => setRecurringForm({ ...recurringForm, daysOfMonth: e.target.value })} />
+                <input placeholder="Assign to (email)" value={recurringForm.assignedEmail} onChange={(e) => setRecurringForm({ ...recurringForm, assignedEmail: e.target.value })} />
+                <button className="btn btn-primary" onClick={saveRecurringTask}>Save Recurring Task</button>
+              </div>
+            </Modal>
+          )}
         </section>
       )}
 
@@ -1160,63 +1598,395 @@ export default function GrowthConsole({ session, initial, loadError }: { session
               <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalCost || 0)}</div><div className="stat-label">Total Costs</div></div>
               <div className="stat-card"><div className="stat-num">${Math.round(data.stats?.totalEarning || 0)}</div><div className="stat-label">Total Earnings</div></div>
             </div>
+            <div className="btn-group" style={{ marginTop: 12 }}>
+              <button className={`btn btn-${reportTab === "billing" ? "primary" : "outline"} btn-sm`} onClick={() => setReportTab("billing")}>Billing Cycle by Recruiter</button>
+              <button className={`btn btn-${reportTab === "directory" ? "primary" : "outline"} btn-sm`} onClick={() => setReportTab("directory")}>Recruiter Directory</button>
+            </div>
           </section>
 
-          <section className="card table-wrap">
-            <div className="card-header"><h2>🗂 Recruiter Directory</h2><span className="text-muted">Click a column header to sort</span></div>
-            {!directory && <div className="text-muted">Loading...</div>}
-            {directory && (
-              <table>
-                <thead>
-                  <tr>
-                    {[
-                      { key: "name", label: "Recruiter" },
-                      { key: "type", label: "Type" },
-                      { key: "workingAgeDays", label: "Age" },
-                      { key: "salesNavActive", label: "Sales Nav Active" },
-                      { key: "salesNavTotal", label: "Sales Nav Used (Total)" },
-                      { key: "apptsTotal", label: "Appts (Total)" },
-                      { key: "sendsTotal", label: "Sends (Total)" },
-                      { key: "sendsYesterday", label: "Sends (Yesterday)" }
-                    ].map((col) => (
-                      <th key={col.key} style={{ cursor: "pointer" }} onClick={() => toggleDirectorySort(col.key)}>
-                        {col.label}{directorySort.key === col.key ? (directorySort.dir === "desc" ? " ▼" : " ▲") : ""}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {directoryRows.map((r: any) => (
-                    <tr key={r.email}>
-                      <td>{r.name}</td>
-                      <td>{r.type}</td>
-                      <td>{r.workingAgeDays ?? "-"}</td>
-                      <td>{r.salesNavActive}</td>
-                      <td>{r.salesNavTotal}</td>
-                      <td>{r.apptsTotal}</td>
-                      <td>{r.sendsTotal}</td>
-                      <td>{r.sendsYesterday}</td>
-                    </tr>
+          {reportTab === "billing" && (
+            <Card title="📆 Billing Cycle by Recruiter">
+              <div className="row-auto" style={{ marginBottom: 8 }}>
+                <input placeholder="Filter by recruiter name…" value={billingSearch} onChange={(e) => setBillingSearch(e.target.value)} />
+                <select value={billingCycleFilter} onChange={(e) => setBillingCycleFilter(e.target.value)}>
+                  <option value="">All Billing Cycles</option>
+                  {billingCycles.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <button className="btn btn-outline btn-sm" onClick={exportBillingCsv}>⬇️ Export CSV</button>
+              </div>
+              {!billingLoaded && <div className="text-muted">Loading…</div>}
+              {billingLoaded && (
+                <DataTable head={[{ label: "Recruiter" }, { label: "Age" }, { label: "Billing Cycle" }, { label: "Appts" }, { label: "Sends" }]}>
+                  {filteredBillingRows.map((r, i) => (
+                    <tr key={i}><td>{r.name} <span className="text-muted" style={{ fontSize: 11 }}>({r.type})</span></td><td>{r.workingAgeDays ?? "-"}</td><td>{r.cycleLabel}</td><td>{r.appts}</td><td>{r.sends}</td></tr>
                   ))}
-                </tbody>
-              </table>
-            )}
-          </section>
+                  {filteredBillingRows.length === 0 && <EmptyRow colSpan={5}>No recruiters match.</EmptyRow>}
+                </DataTable>
+              )}
+            </Card>
+          )}
+
+          {reportTab === "directory" && (
+            <section className="card table-wrap">
+              <div className="card-header"><h2>🗂 Recruiter Directory</h2><span className="text-muted">Click a column header to sort</span></div>
+              {!directory && <div className="text-muted">Loading...</div>}
+              {directory && (
+                <table>
+                  <thead>
+                    <tr>
+                      {[
+                        { key: "name", label: "Recruiter" },
+                        { key: "type", label: "Type" },
+                        { key: "workingAgeDays", label: "Age" },
+                        { key: "salesNavActive", label: "Sales Nav Active" },
+                        { key: "salesNavTotal", label: "Sales Nav Used (Total)" },
+                        { key: "apptsTotal", label: "Appts (Total)" },
+                        { key: "sendsTotal", label: "Sends (Total)" },
+                        { key: "sendsYesterday", label: "Sends (Yesterday)" }
+                      ].map((col) => (
+                        <th key={col.key} style={{ cursor: "pointer" }} onClick={() => toggleDirectorySort(col.key)}>
+                          {col.label}{directorySort.key === col.key ? (directorySort.dir === "desc" ? " ▼" : " ▲") : ""}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {directoryRows.map((r: any) => (
+                      <tr key={r.email}>
+                        <td>{r.name}</td>
+                        <td>{r.type}</td>
+                        <td>{r.workingAgeDays ?? "-"}</td>
+                        <td>{r.salesNavActive}</td>
+                        <td>{r.salesNavTotal}</td>
+                        <td>{r.apptsTotal}</td>
+                        <td>{r.sendsTotal}</td>
+                        <td>{r.sendsYesterday}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+          )}
         </>
       )}
 
       {tab === "linkbooking" && (
         <section className="card">
           <h2>🔗 Link Open vs Booking</h2>
-          <p className="text-muted">Not built yet — this needs Google Analytics Data API access (property "FranBooking Calendly") that this app doesn't have configured. Waiting on GA4 Viewer access + the Analytics Data API enabled for the service account before this section can be built.</p>
+          <p className="text-muted">Not built yet — this needs Google Analytics Data API access (property "FranBooking Calendly") that this app doesn't have configured. Waiting on GA4 Viewer access + the Analytics Data API enabled for the service account before this section can be built. The Reports tab's "Client Report" sub-tab has the same GA4 dependency and isn't built for the same reason.</p>
         </section>
       )}
 
       {tab === "vendors" && (
-        <section className="card">
-          <h2>🏬 Vendor Management</h2>
-          <p className="text-muted">Not built yet — a separate, sizeable stage (Vendor/Profile/Order/Issue tracking) not yet scoped.</p>
-        </section>
+        <>
+          <Card
+            title="🏬 Vendor Summary"
+            actions={<>
+              <button className="btn btn-outline btn-sm" onClick={openAddVendor}>🏷️ Add Vendor</button>
+              <button className="btn btn-primary btn-sm" onClick={openLogOrder}>🛒 Log Order</button>
+              <button className="btn btn-primary btn-sm" onClick={openAddProfile}>➕ Add Profile</button>
+              <button className="btn btn-primary btn-sm" onClick={() => openLogIssue()}>⚠️ Log Issue</button>
+            </>}
+          >
+            {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+            {!vendorsLoaded && <div className="text-muted">Loading…</div>}
+            {vendorsLoaded && (
+              <DataTable head={[{ label: "Vendor" }, { label: "Total Purchased" }, { label: "Active" }, { label: "With Open Issue" }, { label: "Last Vendor Update" }, { label: "Actions" }]}>
+                {vendorSummary.map((v, i) => (
+                  <tr key={v.vendor}>
+                    <td><a href="javascript:void(0)" onClick={() => setVendorStatsIdx(i)}><strong>{v.vendor}</strong></a></td>
+                    <td>{v.totalPurchased}</td>
+                    <td>{v.active}</td>
+                    <td>{v.withOpenIssue}</td>
+                    <td>{v.lastVendorUpdate || "—"}</td>
+                    <td><button className="btn btn-outline btn-sm" onClick={() => { const found = vendorsList.find((x) => x.name === v.vendor); if (found) openEditVendor(found); }}>✏️ Edit</button></td>
+                  </tr>
+                ))}
+                {vendorSummary.length === 0 && <EmptyRow colSpan={6}>No vendors logged yet.</EmptyRow>}
+              </DataTable>
+            )}
+          </Card>
+
+          <Card title={<h2>Orders <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({filteredVendorOrders.length} of {vendorOrders.length})</span></h2>}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 10 }}>
+              <input type="checkbox" checked={vmOrdersPendingOnly} onChange={(e) => setVmOrdersPendingOnly(e.target.checked)} /> Show only pending orders
+            </label>
+            <DataTable head={[{ label: "Order" }, { label: "Vendor" }, { label: "Profile" }, { label: "Location" }, { label: "Requested By" }, { label: "Order Date" }, { label: "Received" }, { label: "Status" }, { label: "Price" }, { label: "Notes" }, { label: "Actions" }]}>
+              {filteredVendorOrders.map((o) => (
+                <tr key={o.id}>
+                  <td>{o.id}</td>
+                  <td>{o.vendor}</td>
+                  <td>{o.profileName ? <>{o.profileName}{o.connections && <div className="text-muted" style={{ fontSize: 11 }}>{o.connections} connections</div>}</> : "—"}</td>
+                  <td>{o.location || "—"}</td>
+                  <td>{o.requestedBy || "—"}</td>
+                  <td>{o.orderDate || "—"}{o.status === "Ordered" && o.daysWaiting !== null && <div className="text-muted" style={{ fontSize: 11 }}>{o.daysWaiting}d waiting</div>}</td>
+                  <td>{o.receivedDate || "—"}{o.status === "Received" && o.daysToReceive !== null && <div className="text-muted" style={{ fontSize: 11 }}>{o.daysToReceive}d turnaround</div>}</td>
+                  <td><Badge tone={o.status === "Received" ? "green" : o.status === "Cancelled" ? "gray" : "yellow"}>{o.status}</Badge></td>
+                  <td>{o.price || "—"}</td>
+                  <td>{o.notes || "—"}</td>
+                  <td>
+                    <div className="btn-group">
+                      <button className="btn btn-outline btn-sm" onClick={() => openEditOrder(o)}>✏️ Edit</button>
+                      {o.status === "Ordered" && <>
+                        <button className="btn btn-primary btn-sm" onClick={() => markOrderReceived(o.id)}>✓ Received</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => cancelOrder(o.id)}>✕ Cancel</button>
+                      </>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredVendorOrders.length === 0 && <EmptyRow colSpan={11}>{vmOrdersPendingOnly ? "No orders pending." : "No orders yet."}</EmptyRow>}
+            </DataTable>
+          </Card>
+
+          <Card title={<h2>Profiles <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({filteredVendorProfiles.length} of {vendorProfiles.length})</span></h2>}>
+            <div className="btn-group" style={{ marginBottom: 10 }}>
+              <button className={`btn btn-${vmProfilesFilter === "all" ? "primary" : "outline"} btn-sm`} onClick={() => setVmProfilesFilter("all")}>All</button>
+              <button className={`btn btn-${vmProfilesFilter === "active" ? "primary" : "outline"} btn-sm`} onClick={() => setVmProfilesFilter("active")}>✅ Active Only</button>
+              <button className={`btn btn-${vmProfilesFilter === "issue" ? "primary" : "outline"} btn-sm`} onClick={() => setVmProfilesFilter("issue")}>⚠️ With Issue</button>
+            </div>
+            <input placeholder="Filter by name, vendor, or managed by…" value={vmProfilesSearch} onChange={(e) => setVmProfilesSearch(e.target.value)} style={{ marginBottom: 8, width: "100%", maxWidth: 340 }} />
+            <DataTable head={[{ label: "Profile" }, { label: "Vendor" }, { label: "Registered" }, { label: "Expire" }, { label: "SN Connected" }, { label: "SN Expire" }, { label: "Last Renewed" }, { label: "Health" }, { label: "Downtime (Cycle)" }, { label: "Managed By" }, { label: "Actions" }]}>
+              {filteredVendorProfiles.map((p) => (
+                <tr key={p.id}>
+                  <td><strong>{p.name}</strong> <span className="text-muted" style={{ fontSize: 11 }}>({p.id})</span>
+                    {p.replacedBy && <div className="text-muted" style={{ fontSize: 11 }}>→ Replaced by {p.replacedBy}</div>}
+                    {p.replacementOf && <div className="text-muted" style={{ fontSize: 11 }}>Replaces {p.replacementOf}</div>}
+                  </td>
+                  <td>{p.vendor}</td>
+                  <td>{p.registeredDate || "—"}</td>
+                  <td>{p.expireDate || "—"}</td>
+                  <td>{p.snConnectedDate || "—"}</td>
+                  <td>{p.snExpireDate || "—"}</td>
+                  <td>{p.lastRenewedDate || "—"}</td>
+                  <td><Badge tone={vendorHealthTone(p)}>{p.health}</Badge></td>
+                  <td>{p.currentCycleDowntimeDays} day{p.currentCycleDowntimeDays === 1 ? "" : "s"}</td>
+                  <td>{p.managedBy || "—"}</td>
+                  <td>
+                    <div className="btn-group">
+                      <button className="btn btn-outline btn-sm" onClick={() => openEditProfile(p)}>✏️ Edit</button>
+                      {p.status !== "Replaced" && <button className="btn btn-primary btn-sm" onClick={() => openRenewProfile(p.id)}>🔄 Renew</button>}
+                      <button className="btn btn-outline btn-sm" onClick={() => openLogIssue(p.id)}>⚠️ Log Issue</button>
+                      {p.status !== "Replaced" && <button className="btn btn-outline btn-sm" onClick={() => openReplaceProfile(p.id)}>🔁 Replace</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredVendorProfiles.length === 0 && <EmptyRow colSpan={11}>No profiles match.</EmptyRow>}
+            </DataTable>
+          </Card>
+
+          <Card title={<h2>Issue Log <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({filteredVendorIssues.length} of {vendorIssues.length})</span></h2>}
+            actions={<button className="btn btn-primary btn-sm" onClick={openVendorFollowUp}>🔔 Vendor Follow Up</button>}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 10 }}>
+              <input type="checkbox" checked={vmIssuesUnresolvedOnly} onChange={(e) => setVmIssuesUnresolvedOnly(e.target.checked)} /> Show only unresolved issues
+            </label>
+            <DataTable head={[{ label: "Profile" }, { label: "Vendor" }, { label: "Reported" }, { label: "Type" }, { label: "Notes" }, { label: "Vendor Feedback" }, { label: "Fixed" }, { label: "Solved?" }, { label: "Days" }, { label: "Replacement" }, { label: "Actions" }]}>
+              {filteredVendorIssues.map((iss) => {
+                const p = vendorProfileById.get(iss.profileId);
+                return (
+                  <tr key={iss.id}>
+                    <td>{p ? <>{p.name} ({p.id})</> : iss.profileId ? iss.profileId : <span className="text-muted">— (Vendor-level)</span>}</td>
+                    <td>{p ? p.vendor : (iss.vendor || "—")}</td>
+                    <td>{iss.reportedDate || "—"}</td>
+                    <td>{iss.issueType}</td>
+                    <td>{iss.issueNotes || "—"}</td>
+                    <td>
+                      {iss.vendorFeedback ? <>{iss.vendorFeedbackDate} — {iss.vendorFeedback}</> : <span className="text-muted">—</span>}
+                      {iss.solved !== "Yes" && <div className="text-muted" style={{ fontSize: 11 }}>ETA: {iss.vendorEta || "No ETA received"}</div>}
+                      {iss.followUpCount > 0 && <div className="text-muted" style={{ fontSize: 11 }}>Followed up {iss.followUpCount}× (last: {iss.lastFollowUpAt || "—"} CST)</div>}
+                    </td>
+                    <td>{iss.fixedDate || "—"}</td>
+                    <td><Badge tone={iss.solved === "Yes" ? "green" : "red"}>{iss.solved}</Badge></td>
+                    <td>{iss.solved === "Yes" ? (iss.daysToSolve !== null ? `${iss.daysToSolve}d to solve` : "—") : (iss.daysOpen !== null ? `${iss.daysOpen}d open` : "—")}</td>
+                    <td>{iss.replacementProfileId ? `→ ${iss.replacementProfileId}` : <span className="text-muted">—</span>}</td>
+                    <td>
+                      {iss.solved !== "Yes" && (
+                        <div className="btn-group">
+                          <button className="btn btn-outline btn-sm" onClick={() => openVfModal(iss.id)}>💬 Feedback</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => followUpVendorIssue(iss.id)}>🔔 Follow Up</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => markVendorIssueSolved(iss.id)}>✓ Mark Solved</button>
+                          {iss.profileId && <button className="btn btn-outline btn-sm" onClick={() => openReplaceProfile(iss.profileId, iss.id)}>🔁 Replace</button>}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredVendorIssues.length === 0 && <EmptyRow colSpan={11}>{vmIssuesUnresolvedOnly ? "No issues unresolved." : "No issues yet."}</EmptyRow>}
+            </DataTable>
+          </Card>
+
+          {vendorStatsIdx !== null && vendorSummary[vendorStatsIdx] && (() => {
+            const v = vendorSummary[vendorStatsIdx];
+            return (
+              <Modal title={`Vendor Stats — ${v.vendor}`} onClose={() => setVendorStatsIdx(null)}>
+                <p>Total Purchased: <strong>{v.totalPurchased}</strong> | Active: <strong>{v.active}</strong> | With Open Issue: <strong>{v.withOpenIssue}</strong></p>
+                <p>Orders — Pending: <strong>{v.ordered}</strong> | Received: <strong>{v.received}</strong>{v.avgOrderDays !== null && <> | Avg Turnaround: <strong>{v.avgOrderDays}d</strong></>}</p>
+                {Object.keys(v.issueTypeBreakdown).length > 0 ? (
+                  <>
+                    <p><strong>Open Issues ({v.withOpenIssue} profile{v.withOpenIssue === 1 ? "" : "s"} affected):</strong></p>
+                    <ul>
+                      {Object.keys(v.issueTypeBreakdown).map((t) => (
+                        <li key={t}>{t}: {v.issueTypeBreakdown[t]}{(v.issueTypeProfileNames[t] || []).length > 0 && ` (${v.issueTypeProfileNames[t].join(", ")})`}</li>
+                      ))}
+                    </ul>
+                    <p className="text-muted">Oldest open issue since: {v.oldestOpenIssueDate || "—"}</p>
+                  </>
+                ) : <p className="text-muted">No open issues.</p>}
+                <p>Overall ETA Status: {v.openIssuesWithEta || v.openIssuesNoEta ? `${v.openIssuesWithEta} with ETA (nearest: ${v.nearestEta || "—"}), ${v.openIssuesNoEta} with no ETA received` : "No open issues"}</p>
+                <p className="text-muted">Last Follow-Up: {v.lastFollowUpAt ? `${v.lastFollowUpAt} CST` : "—"} · Last vendor reply: {v.lastVendorUpdate || "—"}</p>
+                <p className="text-muted">Communication Channel: {v.channel || "—"}</p>
+              </Modal>
+            );
+          })()}
+
+          {vendorModal === "profile" && (
+            <Modal title={vpForm.id ? `Edit Profile — ${vpForm.id}` : "Add Profile"} onClose={() => setVendorModal(null)}
+              footer={<><button className="btn btn-primary" onClick={saveVpForm}>Save Profile</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Profile Name / LI Handle *"><input value={vpForm.name} onChange={(e) => setVpForm({ ...vpForm, name: e.target.value })} /></Field>
+              <Field label="Vendor Name *">
+                <input list="vendor-names" value={vpForm.vendor} onChange={(e) => setVpForm({ ...vpForm, vendor: e.target.value })} />
+                <datalist id="vendor-names">{vendorsList.map((v) => <option key={v.id} value={v.name} />)}</datalist>
+              </Field>
+              <Field label="LI Profile URL"><input value={vpForm.liUrl} onChange={(e) => setVpForm({ ...vpForm, liUrl: e.target.value })} /></Field>
+              <Field label="Price (Monthly Cost)"><input type="number" step="0.01" value={vpForm.price} onChange={(e) => setVpForm({ ...vpForm, price: e.target.value })} /></Field>
+              <Field label="Registered Date"><input type="date" value={vpForm.registered} onChange={(e) => setVpForm({ ...vpForm, registered: e.target.value })} /></Field>
+              <Field label="Sales Nav Connected Date"><input type="date" value={vpForm.snConnected} onChange={(e) => setVpForm({ ...vpForm, snConnected: e.target.value })} /></Field>
+              <Field label="Managed By (BD/Inhouse)">
+                <input list="vendor-bd-roster" value={vpForm.managedBy} onChange={(e) => setVpForm({ ...vpForm, managedBy: e.target.value })} />
+                <datalist id="vendor-bd-roster">{vendorBdRoster.map((r) => <option key={r.email} value={r.name} />)}</datalist>
+              </Field>
+              {vpForm.id && (
+                <Field label="Status">
+                  <select value={vpForm.status} onChange={(e) => setVpForm({ ...vpForm, status: e.target.value })}><option>Active</option><option>Retired</option></select>
+                </Field>
+              )}
+              <Field label="Notes"><input value={vpForm.notes} onChange={(e) => setVpForm({ ...vpForm, notes: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "renew" && (
+            <Modal title="Renew Profile" onClose={() => setVendorModal(null)} narrow
+              footer={<><button className="btn btn-primary" onClick={saveRenewProfile}>Save Renewal</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Last Renewed Date *"><input type="date" value={vrnForm.lastRenewed} onChange={(e) => setVrnForm({ ...vrnForm, lastRenewed: e.target.value })} /></Field>
+              <Field label="Status"><select value={vrnForm.status} onChange={(e) => setVrnForm({ ...vrnForm, status: e.target.value })}><option>Active</option><option>Retired</option></select></Field>
+              <Field label="Notes"><input value={vrnForm.notes} onChange={(e) => setVrnForm({ ...vrnForm, notes: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "vendor" && (
+            <Modal title={vnForm.id ? "Edit Vendor" : "Add Vendor"} onClose={() => setVendorModal(null)} narrow
+              footer={<><button className="btn btn-primary" onClick={saveVnForm}>Save Vendor</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Vendor Name *"><input value={vnForm.name} onChange={(e) => setVnForm({ ...vnForm, name: e.target.value })} /></Field>
+              <Field label="Contact Person"><input value={vnForm.contact} onChange={(e) => setVnForm({ ...vnForm, contact: e.target.value })} /></Field>
+              <Field label="Email"><input value={vnForm.email} onChange={(e) => setVnForm({ ...vnForm, email: e.target.value })} /></Field>
+              <Field label="Slack Handle/Channel"><input value={vnForm.slack} onChange={(e) => setVnForm({ ...vnForm, slack: e.target.value })} /></Field>
+              <Field label="Communication Channel">
+                <select value={vnForm.channel} onChange={(e) => setVnForm({ ...vnForm, channel: e.target.value })}><option value="">Select…</option><option>Email</option><option>Slack</option><option>Both</option></select>
+              </Field>
+              <Field label="Notes"><input value={vnForm.notes} onChange={(e) => setVnForm({ ...vnForm, notes: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "order" && (
+            <Modal title={voForm.id ? "Edit Order" : "Log Order"} onClose={() => setVendorModal(null)}
+              footer={<><button className="btn btn-primary" onClick={saveVoForm}>Save Order</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Vendor *">
+                <input list="vendor-names" value={voForm.vendor} onChange={(e) => setVoForm({ ...voForm, vendor: e.target.value })} />
+              </Field>
+              <Field label="Requested By (BD/Inhouse)">
+                <input list="vendor-bd-roster" value={voForm.requestedBy} onChange={(e) => setVoForm({ ...voForm, requestedBy: e.target.value })} />
+              </Field>
+              <Field label="Profile Name"><input value={voForm.profileName} onChange={(e) => setVoForm({ ...voForm, profileName: e.target.value })} /></Field>
+              <Field label="Profile URL"><input value={voForm.profileUrl} onChange={(e) => setVoForm({ ...voForm, profileUrl: e.target.value })} /></Field>
+              <Field label="Connections"><input value={voForm.connections} onChange={(e) => setVoForm({ ...voForm, connections: e.target.value })} /></Field>
+              <Field label="Location"><input value={voForm.location} onChange={(e) => setVoForm({ ...voForm, location: e.target.value })} /></Field>
+              <Field label="Order Date"><input type="date" value={voForm.orderDate} onChange={(e) => setVoForm({ ...voForm, orderDate: e.target.value })} /></Field>
+              <Field label="Price"><input type="number" step="0.01" value={voForm.price} onChange={(e) => setVoForm({ ...voForm, price: e.target.value })} /></Field>
+              <Field label="Notes"><input value={voForm.notes} onChange={(e) => setVoForm({ ...voForm, notes: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "comm" && (
+            <Modal title="Log Communication" onClose={() => setVendorModal(null)} narrow
+              footer={<><button className="btn btn-primary" onClick={saveVcmForm}>Save Communication</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Vendor *"><input list="vendor-names" value={vcmForm.vendor} onChange={(e) => setVcmForm({ ...vcmForm, vendor: e.target.value })} /></Field>
+              <Field label="Date"><input type="date" value={vcmForm.date} onChange={(e) => setVcmForm({ ...vcmForm, date: e.target.value })} /></Field>
+              <Field label="Channel"><select value={vcmForm.channel} onChange={(e) => setVcmForm({ ...vcmForm, channel: e.target.value })}><option value="">Select…</option><option>Email</option><option>Slack</option></select></Field>
+              <Field label="Note *"><input value={vcmForm.note} onChange={(e) => setVcmForm({ ...vcmForm, note: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "issue" && (
+            <Modal title="Log Issue" onClose={() => setVendorModal(null)}
+              footer={<><button className="btn btn-primary" onClick={saveViForm}>Log Issue</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Profile (leave blank for a vendor-level issue)">
+                <select value={viForm.profileId} onChange={(e) => setViForm({ ...viForm, profileId: e.target.value })}>
+                  <option value="">— Vendor-level issue (no specific profile) —</option>
+                  {vendorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
+                </select>
+              </Field>
+              {!viForm.profileId && (
+                <Field label="Vendor *"><input list="vendor-names" value={viForm.vendor} onChange={(e) => setViForm({ ...viForm, vendor: e.target.value })} /></Field>
+              )}
+              <Field label="Issue Type *">
+                <select value={viForm.issueType} onChange={(e) => setViForm({ ...viForm, issueType: e.target.value })}>
+                  <option value="">Select…</option>
+                  {vendorIssueTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+              <Field label="Reported Date"><input type="date" value={viForm.reportedDate} onChange={(e) => setViForm({ ...viForm, reportedDate: e.target.value })} /></Field>
+              <Field label="Issue Notes"><input value={viForm.notes} onChange={(e) => setViForm({ ...viForm, notes: e.target.value })} placeholder="What happened? (required if Issue Type is 'Other')" /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "followUp" && (
+            <Modal title="Vendor Follow Up — All Open Issues" onClose={() => setVendorModal(null)} narrow
+              footer={<><button className="btn btn-primary" onClick={generateVendorFollowUp}>Generate Follow-Up</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Close</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Vendor *">
+                <select value={vfuVendor} onChange={(e) => setVfuVendor(e.target.value)}>
+                  <option value="">Select vendor…</option>
+                  {vendorsList.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                </select>
+              </Field>
+              <p className="text-muted" style={{ fontSize: 11 }}>Combines every currently open issue for this vendor into a single message and logs a follow-up on all of them at once.</p>
+            </Modal>
+          )}
+
+          {vendorModal === "feedback" && (
+            <Modal title="Add Vendor Feedback" onClose={() => setVendorModal(null)} narrow
+              footer={<><button className="btn btn-primary" onClick={saveVfForm}>Save Feedback</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="Vendor Feedback Date"><input type="date" value={vfForm.date} onChange={(e) => setVfForm({ ...vfForm, date: e.target.value })} /></Field>
+              <Field label="Vendor Feedback"><input value={vfForm.text} onChange={(e) => setVfForm({ ...vfForm, text: e.target.value })} placeholder="What did the vendor say?" /></Field>
+              <Field label="Vendor ETA (Expected Fix Date)" hint="leave blank if none yet"><input type="date" value={vfForm.eta} onChange={(e) => setVfForm({ ...vfForm, eta: e.target.value })} /></Field>
+            </Modal>
+          )}
+
+          {vendorModal === "replace" && (
+            <Modal title="Replace Profile" onClose={() => setVendorModal(null)}
+              footer={<><button className="btn btn-primary" onClick={saveVrForm}>Save Replacement</button><button className="btn btn-outline" onClick={() => setVendorModal(null)}>Cancel</button></>}>
+              {vmMsg && <Msg kind={vmMsg.kind}>{vmMsg.text}</Msg>}
+              <Field label="New Profile Name / LI Handle *"><input value={vrForm.name} onChange={(e) => setVrForm({ ...vrForm, name: e.target.value })} /></Field>
+              <Field label="Vendor Name" hint="same as original if left blank"><input list="vendor-names" value={vrForm.vendor} onChange={(e) => setVrForm({ ...vrForm, vendor: e.target.value })} /></Field>
+              <Field label="LI Profile URL"><input value={vrForm.liUrl} onChange={(e) => setVrForm({ ...vrForm, liUrl: e.target.value })} /></Field>
+              <Field label="Price" hint="same as original if left blank"><input type="number" step="0.01" value={vrForm.price} onChange={(e) => setVrForm({ ...vrForm, price: e.target.value })} /></Field>
+              <Field label="Registered Date"><input type="date" value={vrForm.registered} onChange={(e) => setVrForm({ ...vrForm, registered: e.target.value })} /></Field>
+              <Field label="Sales Nav Connected Date"><input type="date" value={vrForm.snConnected} onChange={(e) => setVrForm({ ...vrForm, snConnected: e.target.value })} /></Field>
+              <Field label="Managed By" hint="same as original if left blank"><input list="vendor-bd-roster" value={vrForm.managedBy} onChange={(e) => setVrForm({ ...vrForm, managedBy: e.target.value })} /></Field>
+              <Field label="Notes"><input value={vrForm.notes} onChange={(e) => setVrForm({ ...vrForm, notes: e.target.value })} /></Field>
+            </Modal>
+          )}
+        </>
       )}
 
       {listModal && (

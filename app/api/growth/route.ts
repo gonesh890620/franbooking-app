@@ -8,6 +8,12 @@ import { roleForLegacyType } from "@/lib/legacyRecruiter";
 import { getFeedbackForDate, getNurtureFuStats, getRecruiterDirectory, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange, getWaitList } from "@/lib/growthDashboard";
 import { appendClientPaymentToSheet, appendCostToSheet, appendTaskToSheet, appendWaitlistToSheet, reassignTaskInSheet, updateTaskStatusInSheet } from "@/lib/growthSheets";
 import { addClient, archiveClient, getAllClientTracker, getClientEmail, getLedgerCsvRows, logSlotCheck, logVacationCheck, markLedgerSent, updateClient } from "@/lib/clientTracker";
+import {
+  addVendor, addVendorOrder, addVendorProfile, getVendorData, logVendorCommunication, logVendorFollowUpBulk,
+  logVendorIssue, logVendorIssueFollowUp, replaceVendorProfile, updateVendor, updateVendorIssue, updateVendorOrder, updateVendorProfile
+} from "@/lib/vendorManagement";
+import { getRecruiterBillingReport, getRecruiterPaymentsReport, getRecruiterRosterForPayment, markRecruiterPaid, setRecruiterWiseAccount } from "@/lib/recruiterPayments";
+import { addRecurringTask, getRecurringTasks, runRecurringCheck, toggleRecurringTask } from "@/lib/recurringTasks";
 
 export async function GET() {
   try {
@@ -148,6 +154,96 @@ export async function POST(req: Request) {
       const result = await getLedgerCsvRows(String(body.clientName || ""));
       return json(result, result.error ? 400 : 200);
     }
+    // Vendor Management — Vendors/Profiles/Issues/Orders/Communications.
+    // Business logic + Vendor spreadsheet dual-write live in
+    // lib/vendorManagement.ts; this route just authorizes and dispatches.
+    if (action === "vendorData") {
+      return json(await getVendorData());
+    }
+    if (action === "addVendorProfile") {
+      const result = await addVendorProfile(body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "updateVendorProfile") {
+      const result = await updateVendorProfile(String(body.profileId || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "replaceVendorProfile") {
+      const result = await replaceVendorProfile(String(body.oldProfileId || ""), body.data || {}, body.issueId ? String(body.issueId) : undefined);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logVendorIssue") {
+      const result = await logVendorIssue(String(body.profileId || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "updateVendorIssue") {
+      const result = await updateVendorIssue(String(body.issueId || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logVendorIssueFollowUp") {
+      const result = await logVendorIssueFollowUp(String(body.issueId || ""));
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logVendorFollowUpBulk") {
+      const result = await logVendorFollowUpBulk(Array.isArray(body.issueIds) ? body.issueIds : []);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "addVendor") {
+      const result = await addVendor(body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "updateVendor") {
+      const result = await updateVendor(String(body.vendorId || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logVendorCommunication") {
+      const result = await logVendorCommunication(body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "addVendorOrder") {
+      const result = await addVendorOrder(body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "updateVendorOrder") {
+      const result = await updateVendorOrder(String(body.orderId || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+
+    // Recruiter Payments + Wise workflow (Finance panel).
+    if (action === "recruiterPaymentsReport") {
+      return json(await getRecruiterPaymentsReport());
+    }
+    if (action === "markRecruiterPaid") {
+      const result = await markRecruiterPaid(String(body.recruiterEmail || ""), String(body.cycleKey || ""), String(body.invoiceId || ""), session.email);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "recruiterRosterForPayment") {
+      return json(await getRecruiterRosterForPayment());
+    }
+    if (action === "setRecruiterWiseAccount") {
+      const result = await setRecruiterWiseAccount(String(body.recruiterEmail || ""), String(body.wiseAccount || ""));
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "recruiterBillingReport") {
+      return json(await getRecruiterBillingReport());
+    }
+
+    // Recurring Tasks (Daily Task panel).
+    if (action === "recurringTasks") {
+      return json(await getRecurringTasks());
+    }
+    if (action === "addRecurringTask") {
+      const result = await addRecurringTask(body.data || {}, session.email, session.name);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "toggleRecurringTask") {
+      const result = await toggleRecurringTask(String(body.id || ""), !!body.active);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "runRecurringCheck") {
+      return json(await runRecurringCheck());
+    }
+
     if (action === "addWaitlist") {
       const clientName = String(body.clientName || "").trim();
       if (!clientName) return json({ error: "Client Name is required" }, 400);

@@ -6,6 +6,7 @@ export const CONFIG = {
   timeLogId: process.env.TIME_LOG_ID || "11MLXf1-eieikzbnTMq8xZKtj4tBXd6DNkooZAVHDhG8",
   costSheetId: process.env.COST_SHEET_ID || "1fSpaXJ5FjNaijDo-KoPsRVMiq9etuKYkyrjSuAn_jk8",
   dailyTaskSheetId: process.env.DAILY_TASK_SHEET_ID || "1Xtv_gOjubw1cbcqYYvhcO2z3JoZkGcz78Xu-c4kSBP4",
+  vendorSheetId: process.env.VENDOR_SHEET_ID || "1S4zt6zTjYSRXotxuVGtf7nce7D8Fe7t9ymGbYtIYUq4",
   canyMax: Number(process.env.CANY_MAX || 6),
   appSecret: process.env.APP_SECRET || "dev-only-change-me",
   adminUsername: process.env.ADMIN_USERNAME || "admin",
