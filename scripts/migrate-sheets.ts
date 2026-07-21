@@ -450,6 +450,26 @@ async function migrateLeadsLedger(supabase: Supabase) {
   await insertMany(supabase, "leads_ledger", records);
 }
 
+// "Client Feedback" tab (CONFIG.CAMPAIGN_SHEET_ID): Timestamp, Client Name,
+// Email, Feedback, Category, Recruiter Name, Status. Never migrated before
+// now — GAS's apiCeoGetAllClientTracker reads it live for the
+// Positive/Negative/No Show counts; this port needs it in Supabase instead.
+async function migrateClientFeedback(supabase: Supabase) {
+  const cm = await clientMaps(supabase);
+  const data = await rows(CAMPAIGN_SHEET_ID, "Client Feedback", "A:G");
+  const records = data.filter((r) => text(r, 1)).map((r, idx) => {
+    const clientName = cleanClientName(text(r, 1));
+    return {
+      client_id: cm.byName.get(clientName.toLowerCase()),
+      client_name: text(r, 1),
+      category: text(r, 4),
+      feedback_date: date(r, 0),
+      legacy_row: idx + 2
+    };
+  });
+  await insertMany(supabase, "client_feedback", records);
+}
+
 async function migrateMasterDb(supabase: Supabase) {
   const users = await userMaps(supabase);
   const data = await rows(MASTER_DB_ID, "Sheet1", "A:H");
@@ -675,7 +695,8 @@ async function resetImportedTables(supabase: Supabase) {
     "sales_nav_inventory", "daily_feedback", "leave_requests", "time_logs", "appointments",
     "outreach_logs", "leads_ledger", "unsure_criteria", "templates", "client_dtc_links",
     "campaigns", "recruiter_necessary_things", "recruiter_target_areas", "contacts",
-    "recruiter_client_assignments", "recruiter_credits", "clients", "app_users", "wait_list"
+    "recruiter_client_assignments", "recruiter_credits", "clients", "app_users", "wait_list",
+    "client_feedback"
   ];
   if (DRY_RUN) {
     console.log(`would reset: ${tables.join(", ")}`);
@@ -727,6 +748,11 @@ async function main() {
     console.log("FU/Daily Assignment/Target Area/Necessary Things migration finished.");
     return;
   }
+  if (arg("only-client-feedback")) {
+    await migrateClientFeedback(supabase);
+    console.log("Client Feedback migration finished.");
+    return;
+  }
   await runStep("resetImportedTables", () => resetImportedTables(supabase));
   await runStep("migrateUsers", () => migrateUsers(supabase));
   await runStep("migrateClientsAndCampaigns", () => migrateClientsAndCampaigns(supabase));
@@ -734,6 +760,7 @@ async function main() {
   await runStep("migrateRecruiterOwnedSheets", () => migrateRecruiterOwnedSheets(supabase));
   await runStep("migrateTemplates", () => migrateTemplates(supabase));
   await runStep("migrateWaitList", () => migrateWaitList(supabase));
+  await runStep("migrateClientFeedback", () => migrateClientFeedback(supabase));
   await runStep("migrateLeadsLedger", () => migrateLeadsLedger(supabase));
   await runStep("migrateMasterDb", () => migrateMasterDb(supabase));
   await runStep("migrateAppointments", () => migrateAppointments(supabase));

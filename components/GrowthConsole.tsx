@@ -72,6 +72,239 @@ export default function GrowthConsole({ session, initial, loadError }: { session
   const [nurtureFu, setNurtureFu] = useState<any>(null);
   const [feedbackDate, setFeedbackDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [feedbackRows, setFeedbackRows] = useState<any[] | null>(null);
+
+  // ── Client Tracker ──────────────────────────────────────────────────────
+  const [clientTrackerLoaded, setClientTrackerLoaded] = useState(false);
+  const [clientRows, setClientRows] = useState<any[]>([]);
+  const [ctSearch, setCtSearch] = useState("");
+  const [ctMsg, setCtMsg] = useState<{ text: string; kind: "error" | "success" } | null>(null);
+  const [clientModal, setClientModal] = useState<"add" | "update" | "archive" | "markLedger" | "ledgerCsv" | "waitlist" | null>(null);
+  const [slotCheckClient, setSlotCheckClient] = useState<string | null>(null);
+  const [vacationCheckClient, setVacationCheckClient] = useState<string | null>(null);
+  const emptyAddClient = {
+    clientName: "", vertical: "Broker", packageType: "", accountConnectDate: new Date().toISOString().slice(0, 10),
+    quota: "", targetAvgLeadsDay: "", cycle: "1", chargeAmt: "", payment: "AUTO", currentCycleStart: new Date().toISOString().slice(0, 10),
+    launchDate: "", currentStatus: "Not Started", pausedReason: "", vacationEta: "", vacationTbd: false, actionTaken: "",
+    paymentNotes: "", quotaNotes: "", acctAuthority: "", cycleLedgerEmail: "", calendlyEmail: "", distributionList: "",
+    crm: "", crmName: "", crmAddress: "", eventUrl: "", userEmailGoogle: "", pw: "", tenant: "", tenantPd: "", webprofile: "", aboutLi: ""
+  };
+  const [addClientForm, setAddClientForm] = useState<typeof emptyAddClient>(emptyAddClient);
+  const emptyUpdateClient = {
+    clientName: "", quota: "", targetAvgLeadsDay: "", cycle: "", chargeAmt: "", payment: "", currentCycleStart: "",
+    launchDate: "", currentStatus: "Not Started", pausedReason: "", vacationEta: "", vacationTbd: false, vertical: "",
+    packageType: "", actionTaken: "", paymentNotes: "", quotaNotes: ""
+  };
+  const [updateClientForm, setUpdateClientForm] = useState<typeof emptyUpdateClient>(emptyUpdateClient);
+  const [archiveForm, setArchiveForm] = useState({ clientName: "", reason: "" });
+  const [markLedgerForm, setMarkLedgerForm] = useState({ clientName: "", cycle: "" });
+  const [ledgerCsvClient, setLedgerCsvClient] = useState("");
+  const [waitlistForm, setWaitlistForm] = useState({ date: new Date().toISOString().slice(0, 10), clientName: "", contactEmail: "", eta: "", notes: "" });
+
+  async function openClientsTab() {
+    setTab("clients");
+    if (clientTrackerLoaded) return;
+    setClientTrackerLoaded(true);
+    try {
+      const payload = await action({ action: "clientTrackerAll" });
+      setClientRows(payload.clients || []);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load Client Tracker");
+    }
+  }
+
+  async function reloadClientTracker() {
+    try {
+      const payload = await action({ action: "clientTrackerAll" });
+      setClientRows(payload.clients || []);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not load Client Tracker");
+    }
+  }
+
+  function ctFail(e: unknown) {
+    setCtMsg({ text: e instanceof Error ? e.message : "Action failed", kind: "error" });
+  }
+
+  async function saveAddClient() {
+    if (!addClientForm.clientName.trim() || !addClientForm.quota) {
+      setCtMsg({ text: "Client Name and Quota are required.", kind: "error" });
+      return;
+    }
+    try {
+      const payload = await action({ action: "addClient", data: { ...addClientForm, vacationEta: addClientForm.vacationTbd ? "" : addClientForm.vacationEta } });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      setClientModal(null);
+      setAddClientForm(emptyAddClient);
+      await reloadClientTracker();
+    } catch (e) { ctFail(e); }
+  }
+
+  function prefillUpdateClient(name: string) {
+    const c = clientRows.find((x) => x.name === name);
+    setUpdateClientForm({
+      clientName: name,
+      quota: c?.quota ?? "", targetAvgLeadsDay: c?.targetAvgPerDay ?? "", cycle: c?.cycleNumber ?? "",
+      chargeAmt: c?.chargeAmt ?? "", payment: c?.payment ?? "", currentCycleStart: c?.currentCycleStart ?? "",
+      launchDate: c?.launchDate ?? "", currentStatus: c?.currentStatus || "Not Started", pausedReason: "",
+      vacationEta: "", vacationTbd: false, vertical: c?.vertical ?? "", packageType: c?.packageType ?? "",
+      actionTaken: c?.actionTaken ?? "", paymentNotes: c?.paymentNotes ?? "", quotaNotes: c?.quotaNotes ?? ""
+    });
+  }
+
+  async function saveUpdateClient() {
+    if (!updateClientForm.clientName) {
+      setCtMsg({ text: "Select a client first.", kind: "error" });
+      return;
+    }
+    const { clientName, vacationTbd, ...rest } = updateClientForm;
+    try {
+      const payload = await action({ action: "updateClient", clientName, data: { ...rest, vacationEta: vacationTbd ? "" : rest.vacationEta } });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      setClientModal(null);
+      await reloadClientTracker();
+    } catch (e) { ctFail(e); }
+  }
+
+  async function saveArchiveClient() {
+    if (!archiveForm.clientName || !archiveForm.reason.trim()) {
+      setCtMsg({ text: "Select a client and enter a reason.", kind: "error" });
+      return;
+    }
+    if (!window.confirm(`Archive "${archiveForm.clientName}"? This removes it from the active Client Tracker.`)) return;
+    try {
+      const payload = await action({ action: "archiveClient", clientName: archiveForm.clientName, reason: archiveForm.reason });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      setClientModal(null);
+      setArchiveForm({ clientName: "", reason: "" });
+      await reloadClientTracker();
+    } catch (e) { ctFail(e); }
+  }
+
+  async function saveMarkLedgerSent() {
+    if (!markLedgerForm.clientName || !markLedgerForm.cycle) {
+      setCtMsg({ text: "Select a client and enter a cycle number.", kind: "error" });
+      return;
+    }
+    try {
+      const payload = await action({ action: "markLedgerSent", clientName: markLedgerForm.clientName, cycleNumber: markLedgerForm.cycle });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      setCtMsg({ text: payload.message || `Labeled ${payload.labeled} lead(s) as "${payload.newLabel}".`, kind: "success" });
+    } catch (e) { ctFail(e); }
+  }
+
+  async function copyLedgerEmailPart(part: "subject" | "body" | "email") {
+    const { clientName, cycle } = markLedgerForm;
+    if (!clientName || !cycle) { setCtMsg({ text: "Select a client and enter a cycle number.", kind: "error" }); return; }
+    try {
+      let text = "";
+      if (part === "subject") text = `Cycle ${cycle} Lead Delivery`;
+      else if (part === "body") {
+        const firstName = clientName.replace(/^Franchise\s+/i, "").split(/\s+/)[0] || clientName;
+        text = `Hi ${firstName},\nAttached is the cycle ${cycle} lead ledger for your review.\n\nPlease let us know if you have any questions.`;
+      } else {
+        const payload = await action({ action: "getClientEmail", clientName });
+        if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+        if (!payload.recipientEmail) { setCtMsg({ text: "No cycle-ledger email on file for this client.", kind: "error" }); return; }
+        text = payload.recipientEmail;
+      }
+      await navigator.clipboard.writeText(text);
+      setCtMsg({ text: `${part === "subject" ? "Subject" : part === "body" ? "Body" : "Email (" + text + ")"} copied to clipboard.`, kind: "success" });
+    } catch (e) { ctFail(e); }
+  }
+
+  function csvEscape(v: unknown) {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  async function exportLedgerCsv() {
+    if (!ledgerCsvClient) return;
+    try {
+      const payload = await action({ action: "getLedgerCsvRows", clientName: ledgerCsvClient });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      const rows: any[] = payload.rows || [];
+      if (!rows.length) { setCtMsg({ text: "No current-cycle leads found for this client.", kind: "error" }); return; }
+      const headers = ["Client / Campaign", "Name", "Email", "Phone", "Company", "Title", "LinkedIn URL", "Location", "State", "Date Created"];
+      const lines = [headers.map(csvEscape).join(",")];
+      rows.forEach((r) => lines.push([r.clientCampaign, r.name, r.email, r.phone, r.company, r.title, r.linkedinUrl, r.location, r.state, r.dateCreated].map(csvEscape).join(",")));
+      const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${ledgerCsvClient.replace(/[^a-z0-9]+/gi, "_")}_ledger.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setClientModal(null);
+    } catch (e) { ctFail(e); }
+  }
+
+  async function saveAddWaitlist() {
+    if (!waitlistForm.clientName.trim()) {
+      setCtMsg({ text: "Client Name is required.", kind: "error" });
+      return;
+    }
+    try {
+      const payload = await action({ action: "addWaitlist", ...waitlistForm });
+      if (payload.error) { setCtMsg({ text: payload.error, kind: "error" }); return; }
+      setClientModal(null);
+      setWaitlistForm({ date: new Date().toISOString().slice(0, 10), clientName: "", contactEmail: "", eta: "", notes: "" });
+    } catch (e) { ctFail(e); }
+  }
+
+  async function logSlotCheck(resultType: "available" | "not_available") {
+    if (!slotCheckClient) return;
+    try {
+      const payload = await action({ action: "logSlotCheck", clientName: slotCheckClient, resultType });
+      if (payload.error) { setMessage(payload.error); return; }
+      setSlotCheckClient(null);
+      await reloadClientTracker();
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+
+  async function logVacationCheck(resultType: "back" | "still_away") {
+    if (!vacationCheckClient) return;
+    try {
+      const payload = await action({ action: "logVacationCheck", clientName: vacationCheckClient, resultType });
+      if (payload.error) { setMessage(payload.error); return; }
+      setVacationCheckClient(null);
+      await reloadClientTracker();
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Action failed"); }
+  }
+
+  function shouldShowVacationBadge(pausedReason: string) {
+    const m = /PAUSED Vacation.*\|\s*ETA\s+(\d{4}-\d{2}-\d{2}|TBD)/i.exec(pausedReason || "");
+    if (!m) return false;
+    const eta = m[1];
+    if (eta === "TBD") {
+      const dow = new Date().getDay();
+      return dow === 1 || dow === 4;
+    }
+    return new Date().toISOString().slice(0, 10) >= eta;
+  }
+
+  function statusCellColor(status: string) {
+    const s = String(status || "").toLowerCase();
+    if (s.indexOf("fire") >= 0) return "#f6b26b";
+    if (s.indexOf("smok") >= 0) return "#00ffff";
+    if (s.indexOf("track") >= 0) return "#00b621";
+    if (s.indexOf("improv") >= 0) return "#ffff00";
+    if (s.indexOf("not started") >= 0) return "#efa6a6";
+    if (s.indexOf("pause") >= 0) return "#ff3232";
+    return "";
+  }
+
+  function quotaPctCellColor(pct: number) {
+    const n = Number(pct) || 0;
+    if (n >= 100) return "#00ff39";
+    if (n >= 85) return "#da8cd7";
+    return "";
+  }
+
+  const filteredClientRows = ctSearch.trim()
+    ? clientRows.filter((c) => String(c.name || "").toLowerCase().includes(ctSearch.trim().toLowerCase()))
+    : clientRows;
   const [showTop5, setShowTop5] = useState(false);
   const [showNonProd, setShowNonProd] = useState(false);
   const [s2aRange, setS2aRange] = useState({ startDate: "", endDate: "" });
@@ -314,7 +547,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                 <div className="muted">Active recruiters, overall S2A, Sends, S2A by recruiter, Top 5 &amp; Non-Productive lists</div>
               </span>
             </button>
-            <button className="section-tile" onClick={() => setTab("clients")}>
+            <button className="section-tile" onClick={openClientsTab}>
               <span className="section-tile-icon">🏢</span>
               <span>
                 <div className="section-tile-title">Client Tracker</div>
@@ -580,29 +813,286 @@ export default function GrowthConsole({ session, initial, loadError }: { session
       )}
 
       {tab === "clients" && (
-        <section className="panel table-wrap">
-          <h2>🏢 Client Tracker</h2>
-          <table>
-            <thead><tr><th>Client</th><th>Status</th><th>Quota</th><th>Results</th><th>Payment</th><th>Action</th></tr></thead>
-            <tbody>
-              {(data.campaigns || []).map((c: any) => (
-                <tr key={c.id}>
-                  <td>{c.campaign_name || c.clients?.name}</td>
-                  <td>{c.campaign_status}</td>
-                  <td>{c.quota}</td>
-                  <td>{c.results_total}</td>
-                  <td>{c.payment}</td>
-                  <td>
-                    <div className="actions">
-                      <button className="btn btn-outline" onClick={() => doAction({ action: "updateClientStatus", campaignId: c.id, status: "Paused", pausedReason: "Growth update" })}>Pause</button>
-                      <button className="btn btn-primary" onClick={() => doAction({ action: "updateClientStatus", campaignId: c.id, status: "Active" })}>Active</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <>
+          <section className="panel">
+            <h2>🏢 Client Tracker</h2>
+            <div className="actions" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setCtMsg(null); setClientModal("add"); }}>➕ Add Client</button>
+              <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setUpdateClientForm(emptyUpdateClient); setClientModal("update"); }}>✏️ Update Client</button>
+              <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setArchiveForm({ clientName: "", reason: "" }); setClientModal("archive"); }}>🗄️ Archive Client</button>
+              <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setMarkLedgerForm({ clientName: "", cycle: "" }); setClientModal("markLedger"); }}>📤 Mark Ledger Sent</button>
+              <button className="btn btn-outline btn-sm" onClick={() => { setCtMsg(null); setLedgerCsvClient(""); setClientModal("ledgerCsv"); }}>⬇️ Download Ledger CSV</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { setCtMsg(null); setWaitlistForm({ date: new Date().toISOString().slice(0, 10), clientName: "", contactEmail: "", eta: "", notes: "" }); setClientModal("waitlist"); }}>➕ Add to Wait List</button>
+            </div>
+            <input placeholder="Search clients…" value={ctSearch} onChange={(e) => setCtSearch(e.target.value)} style={{ marginBottom: 6, width: "100%", maxWidth: 320 }} />
+            <div className="muted" style={{ marginBottom: 6, fontSize: 12 }}>{filteredClientRows.length} of {clientRows.length} client(s)</div>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Client</th><th>Status</th><th>Quota</th><th>Target/Day</th><th>Cycle</th>
+                    <th>Total Appts</th><th>Remaining (Cycle)</th><th>% Quota Complete</th><th>Overall CA/NY</th><th>Cycle CA/NY</th>
+                    <th>CA/NY (Cycle Count)</th><th>Positive</th><th>Negative</th><th>No Show</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredClientRows.map((c: any) => {
+                    const needsSlotCheck = c.currentStatus === "Paused" && /Not Enough Slots Available/i.test(c.pausedReason || "");
+                    const needsVacationCheck = c.currentStatus === "Paused" && shouldShowVacationBadge(c.pausedReason || "");
+                    const statusColor = statusCellColor(c.status);
+                    const quotaColor = quotaPctCellColor(c.quotaCompletePct);
+                    return (
+                      <tr key={c.name}>
+                        <td>{c.name}</td>
+                        <td style={statusColor ? { background: statusColor } : undefined}>
+                          {c.status || "—"}
+                          {needsSlotCheck && <button className="btn btn-outline btn-sm" style={{ marginLeft: 6, fontSize: 10, padding: "2px 6px" }} onClick={() => setSlotCheckClient(c.name)} title="Not Enough Slots Available — check Calendly">🔔 Check Slots</button>}
+                          {needsVacationCheck && <button className="btn btn-outline btn-sm" style={{ marginLeft: 6, fontSize: 10, padding: "2px 6px" }} onClick={() => setVacationCheckClient(c.name)} title="Vacation ETA reached — check status">🏖️ Check Vacation</button>}
+                        </td>
+                        <td>{c.quota ?? "—"}</td>
+                        <td>{c.targetAvgPerDay ?? "—"}</td>
+                        <td>{c.cycleNumber || "—"}</td>
+                        <td>{c.totalAppts}</td>
+                        <td>{c.remainingThisCycle ?? "—"}</td>
+                        <td style={quotaColor ? { background: quotaColor } : undefined}>{c.quotaCompletePct || 0}%</td>
+                        <td>{c.overallCanyPct}%</td>
+                        <td>{c.cycleCanyPct}%</td>
+                        <td>{c.cycleCanyCount}</td>
+                        <td>{c.feedback.positive}</td>
+                        <td>{c.feedback.negative}</td>
+                        <td>{c.feedback.noShow}</td>
+                      </tr>
+                    );
+                  })}
+                  {filteredClientRows.length === 0 && (
+                    <tr><td colSpan={14} className="muted" style={{ textAlign: "center", padding: 20 }}>{clientTrackerLoaded ? "No clients match." : "Loading…"}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {slotCheckClient && (
+            <div className="modal-overlay" onClick={() => setSlotCheckClient(null)}>
+              <div className="panel" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>Check Slots — {slotCheckClient}</h2><button className="modal-close" onClick={() => setSlotCheckClient(null)}>✕</button></div>
+                {(() => {
+                  const c = clientRows.find((x) => x.name === slotCheckClient);
+                  return c?.eventUrl ? <p><a href={c.eventUrl} target="_blank" rel="noreferrer">Open Calendly →</a></p> : null;
+                })()}
+                <div className="actions">
+                  <button className="btn btn-primary" onClick={() => logSlotCheck("available")}>Available now — take live</button>
+                  <button className="btn btn-outline" onClick={() => logSlotCheck("not_available")}>Still not available</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {vacationCheckClient && (
+            <div className="modal-overlay" onClick={() => setVacationCheckClient(null)}>
+              <div className="panel" style={{ maxWidth: 420, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>Check Vacation — {vacationCheckClient}</h2><button className="modal-close" onClick={() => setVacationCheckClient(null)}>✕</button></div>
+                <div className="actions">
+                  <button className="btn btn-primary" onClick={() => logVacationCheck("back")}>Client is back — reactivate</button>
+                  <button className="btn btn-outline" onClick={() => logVacationCheck("still_away")}>Still on vacation</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "add" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>➕ Add Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid admin-create-grid">
+                  <label>Client Name*<input value={addClientForm.clientName} onChange={(e) => setAddClientForm({ ...addClientForm, clientName: e.target.value })} /></label>
+                  <label>Vertical<select value={addClientForm.vertical} onChange={(e) => setAddClientForm({ ...addClientForm, vertical: e.target.value })}><option>Broker</option><option>Direct</option><option>Other</option></select></label>
+                  <label>Package Type<input value={addClientForm.packageType} onChange={(e) => setAddClientForm({ ...addClientForm, packageType: e.target.value })} /></label>
+                  <label>Account Connect Date<input type="date" value={addClientForm.accountConnectDate} onChange={(e) => setAddClientForm({ ...addClientForm, accountConnectDate: e.target.value })} /></label>
+                  <label>Quota*<input type="number" value={addClientForm.quota} onChange={(e) => setAddClientForm({ ...addClientForm, quota: e.target.value })} /></label>
+                  <label>Target Avg Leads/Day<input type="number" value={addClientForm.targetAvgLeadsDay} onChange={(e) => setAddClientForm({ ...addClientForm, targetAvgLeadsDay: e.target.value })} /></label>
+                  <label>Cycle<input type="number" value={addClientForm.cycle} onChange={(e) => setAddClientForm({ ...addClientForm, cycle: e.target.value })} /></label>
+                  <label>Charge Amount<input value={addClientForm.chargeAmt} onChange={(e) => setAddClientForm({ ...addClientForm, chargeAmt: e.target.value })} /></label>
+                  <label>Payment<select value={addClientForm.payment} onChange={(e) => setAddClientForm({ ...addClientForm, payment: e.target.value })}><option>AUTO</option><option>MANUAL</option></select></label>
+                  <label>Current Cycle Start<input type="date" value={addClientForm.currentCycleStart} onChange={(e) => setAddClientForm({ ...addClientForm, currentCycleStart: e.target.value })} /></label>
+                  <label>Launch Date<input type="date" value={addClientForm.launchDate} onChange={(e) => setAddClientForm({ ...addClientForm, launchDate: e.target.value })} /></label>
+                  <label>Current Status<select value={addClientForm.currentStatus} onChange={(e) => setAddClientForm({ ...addClientForm, currentStatus: e.target.value })}><option>Not Started</option><option>Active</option><option>Paused</option></select></label>
+                  {addClientForm.currentStatus === "Paused" && (
+                    <label>Paused Reason<select value={addClientForm.pausedReason} onChange={(e) => setAddClientForm({ ...addClientForm, pausedReason: e.target.value })}>
+                      <option value="">Select…</option>
+                      <option>PAUSED Vacation</option>
+                      <option>PAUSED Not Enough Slots Available</option>
+                      <option>PAUSED Non-Payment</option>
+                      <option>PAUSED Other</option>
+                    </select></label>
+                  )}
+                  {addClientForm.currentStatus === "Paused" && addClientForm.pausedReason === "PAUSED Vacation" && (
+                    <label>Vacation ETA
+                      <input type="date" disabled={addClientForm.vacationTbd} value={addClientForm.vacationEta} onChange={(e) => setAddClientForm({ ...addClientForm, vacationEta: e.target.value })} />
+                      <span className="muted" style={{ fontSize: 11 }}><input type="checkbox" checked={addClientForm.vacationTbd} onChange={(e) => setAddClientForm({ ...addClientForm, vacationTbd: e.target.checked })} /> TBD</span>
+                    </label>
+                  )}
+                  <label>Action Taken<input value={addClientForm.actionTaken} onChange={(e) => setAddClientForm({ ...addClientForm, actionTaken: e.target.value })} /></label>
+                  <label>Payment Notes<input value={addClientForm.paymentNotes} onChange={(e) => setAddClientForm({ ...addClientForm, paymentNotes: e.target.value })} /></label>
+                  <label>Quota Notes<input value={addClientForm.quotaNotes} onChange={(e) => setAddClientForm({ ...addClientForm, quotaNotes: e.target.value })} /></label>
+                  <label>Account Authority<input value={addClientForm.acctAuthority} onChange={(e) => setAddClientForm({ ...addClientForm, acctAuthority: e.target.value })} /></label>
+                  <label>Cycle Ledger Email<input value={addClientForm.cycleLedgerEmail} onChange={(e) => setAddClientForm({ ...addClientForm, cycleLedgerEmail: e.target.value })} /></label>
+                  <label>Calendly Email<input value={addClientForm.calendlyEmail} onChange={(e) => setAddClientForm({ ...addClientForm, calendlyEmail: e.target.value })} /></label>
+                  <label>Distribution List<input value={addClientForm.distributionList} onChange={(e) => setAddClientForm({ ...addClientForm, distributionList: e.target.value })} /></label>
+                  <label>CRM<input value={addClientForm.crm} onChange={(e) => setAddClientForm({ ...addClientForm, crm: e.target.value })} /></label>
+                  <label>CRM Name<input value={addClientForm.crmName} onChange={(e) => setAddClientForm({ ...addClientForm, crmName: e.target.value })} /></label>
+                  <label>CRM Address<input value={addClientForm.crmAddress} onChange={(e) => setAddClientForm({ ...addClientForm, crmAddress: e.target.value })} /></label>
+                  <label>Event URL (Calendly)<input value={addClientForm.eventUrl} onChange={(e) => setAddClientForm({ ...addClientForm, eventUrl: e.target.value })} /></label>
+                  <label>Google User Email<input value={addClientForm.userEmailGoogle} onChange={(e) => setAddClientForm({ ...addClientForm, userEmailGoogle: e.target.value })} /></label>
+                  <label>Password<input value={addClientForm.pw} onChange={(e) => setAddClientForm({ ...addClientForm, pw: e.target.value })} /></label>
+                  <label>Tenant<input value={addClientForm.tenant} onChange={(e) => setAddClientForm({ ...addClientForm, tenant: e.target.value })} /></label>
+                  <label>Tenant PD<input value={addClientForm.tenantPd} onChange={(e) => setAddClientForm({ ...addClientForm, tenantPd: e.target.value })} /></label>
+                  <label>Web Profile<input value={addClientForm.webprofile} onChange={(e) => setAddClientForm({ ...addClientForm, webprofile: e.target.value })} /></label>
+                  <label>About LI<input value={addClientForm.aboutLi} onChange={(e) => setAddClientForm({ ...addClientForm, aboutLi: e.target.value })} /></label>
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" onClick={saveAddClient}>Save Client</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "update" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 640, width: "94vw", maxHeight: "86vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>✏️ Update Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid admin-create-grid">
+                  <label>Client<select value={updateClientForm.clientName} onChange={(e) => prefillUpdateClient(e.target.value)}>
+                    <option value="">Select a client…</option>
+                    {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select></label>
+                  <label>Quota<input type="number" value={updateClientForm.quota} onChange={(e) => setUpdateClientForm({ ...updateClientForm, quota: e.target.value })} /></label>
+                  <label>Target Avg Leads/Day<input type="number" value={updateClientForm.targetAvgLeadsDay} onChange={(e) => setUpdateClientForm({ ...updateClientForm, targetAvgLeadsDay: e.target.value })} /></label>
+                  <label>Cycle<input type="number" value={updateClientForm.cycle} onChange={(e) => setUpdateClientForm({ ...updateClientForm, cycle: e.target.value })} /></label>
+                  <label>Charge Amount<input value={updateClientForm.chargeAmt} onChange={(e) => setUpdateClientForm({ ...updateClientForm, chargeAmt: e.target.value })} /></label>
+                  <label>Payment<input value={updateClientForm.payment} onChange={(e) => setUpdateClientForm({ ...updateClientForm, payment: e.target.value })} /></label>
+                  <label>Current Cycle Start<input type="date" value={updateClientForm.currentCycleStart} onChange={(e) => setUpdateClientForm({ ...updateClientForm, currentCycleStart: e.target.value })} /></label>
+                  <label>Launch Date<input type="date" value={updateClientForm.launchDate} onChange={(e) => setUpdateClientForm({ ...updateClientForm, launchDate: e.target.value })} /></label>
+                  <label>Current Status<select value={updateClientForm.currentStatus} onChange={(e) => setUpdateClientForm({ ...updateClientForm, currentStatus: e.target.value })}><option>Not Started</option><option>Active</option><option>Paused</option></select></label>
+                  {updateClientForm.currentStatus === "Paused" && (
+                    <label>Paused Reason<select value={updateClientForm.pausedReason} onChange={(e) => setUpdateClientForm({ ...updateClientForm, pausedReason: e.target.value })}>
+                      <option value="">Select…</option>
+                      <option>PAUSED Vacation</option>
+                      <option>PAUSED Not Enough Slots Available</option>
+                      <option>PAUSED Non-Payment</option>
+                      <option>PAUSED Other</option>
+                    </select></label>
+                  )}
+                  {updateClientForm.currentStatus === "Paused" && updateClientForm.pausedReason === "PAUSED Vacation" && (
+                    <label>Vacation ETA
+                      <input type="date" disabled={updateClientForm.vacationTbd} value={updateClientForm.vacationEta} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vacationEta: e.target.value })} />
+                      <span className="muted" style={{ fontSize: 11 }}><input type="checkbox" checked={updateClientForm.vacationTbd} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vacationTbd: e.target.checked })} /> TBD</span>
+                    </label>
+                  )}
+                  <label>Vertical<input value={updateClientForm.vertical} onChange={(e) => setUpdateClientForm({ ...updateClientForm, vertical: e.target.value })} /></label>
+                  <label>Package Type<input value={updateClientForm.packageType} onChange={(e) => setUpdateClientForm({ ...updateClientForm, packageType: e.target.value })} /></label>
+                  <label>Action Taken<input value={updateClientForm.actionTaken} onChange={(e) => setUpdateClientForm({ ...updateClientForm, actionTaken: e.target.value })} /></label>
+                  <label>Payment Notes<input value={updateClientForm.paymentNotes} onChange={(e) => setUpdateClientForm({ ...updateClientForm, paymentNotes: e.target.value })} /></label>
+                  <label>Quota Notes<input value={updateClientForm.quotaNotes} onChange={(e) => setUpdateClientForm({ ...updateClientForm, quotaNotes: e.target.value })} /></label>
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" onClick={saveUpdateClient}>Save Changes</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "archive" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>🗄️ Archive Client</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid">
+                  <label>Client<select value={archiveForm.clientName} onChange={(e) => setArchiveForm({ ...archiveForm, clientName: e.target.value })}>
+                    <option value="">Select a client…</option>
+                    {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select></label>
+                  <textarea placeholder="Archive reason (required)" value={archiveForm.reason} onChange={(e) => setArchiveForm({ ...archiveForm, reason: e.target.value })} />
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" onClick={saveArchiveClient}>Archive</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "markLedger" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>📤 Mark Ledger Sent</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid">
+                  <label>Client<select value={markLedgerForm.clientName} onChange={(e) => setMarkLedgerForm({ ...markLedgerForm, clientName: e.target.value })}>
+                    <option value="">Select a client…</option>
+                    {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select></label>
+                  <input type="number" placeholder="Cycle number" value={markLedgerForm.cycle} onChange={(e) => setMarkLedgerForm({ ...markLedgerForm, cycle: e.target.value })} />
+                </div>
+                <div className="actions" style={{ marginTop: 10, flexWrap: "wrap" }}>
+                  <button className="btn btn-primary" onClick={saveMarkLedgerSent}>Mark Sent</button>
+                  <button className="btn btn-outline" onClick={() => copyLedgerEmailPart("subject")}>Copy Subject</button>
+                  <button className="btn btn-outline" onClick={() => copyLedgerEmailPart("body")}>Copy Body</button>
+                  <button className="btn btn-outline" onClick={() => copyLedgerEmailPart("email")}>Copy Recipient Email</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "ledgerCsv" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>⬇️ Download Ledger CSV</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid">
+                  <label>Client<select value={ledgerCsvClient} onChange={(e) => setLedgerCsvClient(e.target.value)}>
+                    <option value="">Select a client…</option>
+                    {clientRows.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select></label>
+                  {ledgerCsvClient && (() => {
+                    const c = clientRows.find((x) => x.name === ledgerCsvClient);
+                    const pct = c?.quotaCompletePct || 0;
+                    return <div style={{ color: pct >= 100 ? "#059669" : "#dc2626", fontSize: 12 }}>% Quota Complete: {pct}% {pct >= 100 ? "— ready to export." : "— must reach 100% before exporting."}</div>;
+                  })()}
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" disabled={!ledgerCsvClient || (clientRows.find((x) => x.name === ledgerCsvClient)?.quotaCompletePct || 0) < 100} onClick={exportLedgerCsv}>Export CSV</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {clientModal === "waitlist" && (
+            <div className="modal-overlay" onClick={() => setClientModal(null)}>
+              <div className="panel" style={{ maxWidth: 460, width: "92vw" }} onClick={(e) => e.stopPropagation()}>
+                <div className="section-head"><h2>➕ Add to Wait List</h2><button className="modal-close" onClick={() => setClientModal(null)}>✕</button></div>
+                {ctMsg && <div className={`msg msg-${ctMsg.kind}`}>{ctMsg.text}</div>}
+                <div className="form-grid">
+                  <label>Date<input type="date" value={waitlistForm.date} onChange={(e) => setWaitlistForm({ ...waitlistForm, date: e.target.value })} /></label>
+                  <input placeholder="Client Name" value={waitlistForm.clientName} onChange={(e) => setWaitlistForm({ ...waitlistForm, clientName: e.target.value })} />
+                  <input placeholder="Contact Email" value={waitlistForm.contactEmail} onChange={(e) => setWaitlistForm({ ...waitlistForm, contactEmail: e.target.value })} />
+                  <label>ETA to Launch<input type="date" value={waitlistForm.eta} onChange={(e) => setWaitlistForm({ ...waitlistForm, eta: e.target.value })} /></label>
+                  <textarea placeholder="Notes" value={waitlistForm.notes} onChange={(e) => setWaitlistForm({ ...waitlistForm, notes: e.target.value })} />
+                </div>
+                <div className="actions" style={{ marginTop: 10 }}>
+                  <button className="btn btn-primary" onClick={saveAddWaitlist}>Save</button>
+                  <button className="btn btn-outline" onClick={() => setClientModal(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {tab === "finance" && (

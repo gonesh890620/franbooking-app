@@ -3,11 +3,11 @@ import { getGrowthPayload } from "@/lib/growthData";
 import { canOpenRole } from "@/lib/roles";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { setSession } from "@/lib/auth";
-import { updateMasterTrackerClientStatus } from "@/lib/masterTracker";
 import { brainstormWithCeo } from "@/lib/ai";
 import { roleForLegacyType } from "@/lib/legacyRecruiter";
 import { getFeedbackForDate, getNurtureFuStats, getRecruiterDirectory, getRecruiterOnlineStatus, getRecruitersOnLeave, getRecruitersOnLeaveTomorrow, getS2AByRecruiterRange, getWaitList } from "@/lib/growthDashboard";
-import { appendClientPaymentToSheet, appendCostToSheet, appendTaskToSheet, reassignTaskInSheet, updateTaskStatusInSheet } from "@/lib/growthSheets";
+import { appendClientPaymentToSheet, appendCostToSheet, appendTaskToSheet, appendWaitlistToSheet, reassignTaskInSheet, updateTaskStatusInSheet } from "@/lib/growthSheets";
+import { addClient, archiveClient, getAllClientTracker, getClientEmail, getLedgerCsvRows, logSlotCheck, logVacationCheck, markLedgerSent, updateClient } from "@/lib/clientTracker";
 
 export async function GET() {
   try {
@@ -108,18 +108,58 @@ export async function POST(req: Request) {
       return json({ ok: true });
     }
 
-    // Client Tracker status change — dual-writes Supabase campaigns + the
-    // Master Tracker sheet, same as Operations' updateClientStatus (Phase 1).
-    if (action === "updateClientStatus") {
-      const campaignId = String(body.campaignId || "");
-      const { data: campaign } = await supabase.from("campaigns").select("campaign_name").eq("id", campaignId).maybeSingle();
-      await supabase.from("campaigns").update({
-        campaign_status: body.status || "",
-        paused_reason: body.pausedReason || "",
-        updated_at: new Date().toISOString()
-      }).eq("id", campaignId);
-      if (campaign?.campaign_name) {
-        await updateMasterTrackerClientStatus(campaign.campaign_name, body.status || "", body.pausedReason || "");
+    // Client Tracker: full table + Add/Update/Archive Client, Mark Ledger
+    // Sent, Ledger CSV export, and the Slot/Vacation-check follow-up badges.
+    // Business logic + Master Tracker/Leads Ledger dual-write live in
+    // lib/clientTracker.ts; this route just authorizes and dispatches.
+    if (action === "clientTrackerAll") {
+      const result = await getAllClientTracker();
+      return json(result);
+    }
+    if (action === "addClient") {
+      const result = await addClient(body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "updateClient") {
+      const result = await updateClient(String(body.clientName || ""), body.data || {});
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "archiveClient") {
+      const result = await archiveClient(String(body.clientName || ""), String(body.reason || ""), session.name);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logSlotCheck") {
+      const result = await logSlotCheck(String(body.clientName || ""), body.resultType);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "logVacationCheck") {
+      const result = await logVacationCheck(String(body.clientName || ""), body.resultType);
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "markLedgerSent") {
+      const result = await markLedgerSent(String(body.clientName || ""), String(body.cycleNumber || ""));
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "getClientEmail") {
+      const result = await getClientEmail(String(body.clientName || ""));
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "getLedgerCsvRows") {
+      const result = await getLedgerCsvRows(String(body.clientName || ""));
+      return json(result, result.error ? 400 : 200);
+    }
+    if (action === "addWaitlist") {
+      const clientName = String(body.clientName || "").trim();
+      if (!clientName) return json({ error: "Client Name is required" }, 400);
+      const date = body.date || new Date().toISOString().slice(0, 10);
+      const contactEmail = body.contactEmail || "";
+      const eta = body.eta || "";
+      const notes = body.notes || "";
+      await supabase.from("wait_list").insert({ entry_date: date, client_name: clientName, contact_email: contactEmail, eta_launch: eta, notes });
+      try {
+        await appendWaitlistToSheet(date, clientName, contactEmail, eta, notes);
+      } catch (e) {
+        console.error("addWaitlist sheet write failed:", e);
       }
       return json({ ok: true });
     }

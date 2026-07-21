@@ -104,3 +104,27 @@ export async function findSheetTitleExact(spreadsheetId: string, candidates: str
   }
   return null;
 }
+
+export async function getSheetIdByTitle(spreadsheetId: string, title: string) {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const found = (meta.data.sheets || []).find((s) => s.properties?.title === title);
+  return found?.properties?.sheetId;
+}
+
+// rowNumber is 1-based (matching the Sheets UI / A1 notation row numbers).
+export async function deleteSheetRow(spreadsheetId: string, title: string, rowNumber: number) {
+  const sheetId = await getSheetIdByTitle(spreadsheetId, title);
+  if (typeof sheetId !== "number") throw new Error(`Sheet tab not found: ${title}`);
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNumber - 1, endIndex: rowNumber }
+        }
+      }]
+    }
+  });
+}

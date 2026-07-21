@@ -39,3 +39,16 @@ export async function reassignTaskInSheet(legacyId: string, assignedEmail: strin
   if (!found) return;
   await updateValues(found.spreadsheetId, `${quoteSheetName(found.title)}!K${found.rowNumber}:L${found.rowNumber}`, [[assignedEmail, assignedName]]);
 }
+
+export async function appendWaitlistToSheet(date: string, clientName: string, contactEmail: string, etaLaunch: string, notes: string) {
+  const title = await findSheetTitle(CONFIG.campaignSheetId, ["Wait List"]);
+  await appendValues(CONFIG.campaignSheetId, `${quoteSheetName(title)}!A:E`, [[date, clientName, contactEmail, etaLaunch, notes]]);
+}
+
+// Mirrors GAS apiCeoMarkLedgerSent's Leads Ledger relabel (Col A). rowNumber
+// is the sheet row (1-based) captured as `legacy_row` when the row was
+// migrated — rows created after the migration have no Sheet row to relabel.
+export async function relabelLeadsLedgerRow(rowNumber: number, newLabel: string) {
+  const title = await findSheetTitle(CONFIG.campaignSheetId, ["Leads Ledger"]);
+  await updateValues(CONFIG.campaignSheetId, `${quoteSheetName(title)}!A${rowNumber}`, [[newLabel]]);
+}
