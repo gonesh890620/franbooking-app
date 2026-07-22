@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import BodyClass from "./BodyClass";
-import { AppHeader } from "./ui";
+import { AppHeader, LogoutButton } from "./ui";
 
 const APPLICANT_STATUSES = ["Applied", "Whatsapp Message Sent", "Accepted", "Rejected", "Onboarding", "Hired"];
 
@@ -94,6 +94,7 @@ export default function OperationsConsole({ session, initial, loadError }: { ses
         <button className="btn btn-ghost btn-sm" onClick={reload}>
           ↻ Refresh
         </button>
+        <LogoutButton />
       </AppHeader>
 
       {session.impersonatorEmail && (

@@ -76,6 +76,7 @@ export async function getAllClientTracker() {
     cycleCanyCount: 0,
     cycleCanyPct: 0,
     remainingThisCycle: null as number | null,
+    last7Appts: 0,
     quotaCompletePct: 0,
     feedback: { positive: 0, negative: 0, noShow: 0 },
     actionTaken: row.action_taken || "",
@@ -113,9 +114,13 @@ export async function getAllClientTracker() {
     return null;
   }
 
+  // 7-day window (calendar-day, midnight-anchored, matching the Growth
+  // dashboard's period windows) for the per-client "Last 7 Days Appts" column.
+  const last7Cut = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+
   const { data: ledgerRows } = await supabase
     .from("leads_ledger")
-    .select("campaign_name,state")
+    .select("campaign_name,state,date_created")
     .limit(50000);
   (ledgerRows || []).forEach((row: any) => {
     const campaign = String(row.campaign_name || "").trim();
@@ -124,6 +129,8 @@ export async function getAllClientTracker() {
     const client = findClientFor(cLower);
     if (!client) return;
     client.totalAppts++;
+    const dateKey = String(row.date_created || "").slice(0, 10);
+    if (dateKey && dateKey >= last7Cut) client.last7Appts++;
     const state = String(row.state || "").trim().toUpperCase();
     const isCany = state === "CA" || state === "NY" || state === "CALIFORNIA" || state === "NEW YORK";
     if (isCany) client.overallCanyCount++;

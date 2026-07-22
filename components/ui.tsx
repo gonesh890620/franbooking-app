@@ -43,6 +43,27 @@ export function AppHeader({
   );
 }
 
+/**
+ * Logout button used in every panel header. GAS had one on every page; the
+ * Next port only had it on Admin and Recruiter, so Growth/Operations/Agent/
+ * Client had no way out. Posts to the logout route, then hard-redirects.
+ */
+export function LogoutButton() {
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Redirect regardless — the cookie clears server-side either way.
+    }
+    window.location.href = "/login";
+  }
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={logout}>
+      Logout
+    </button>
+  );
+}
+
 /* ── CARD ─────────────────────────────────────────────────────────────────── */
 
 export function Card({

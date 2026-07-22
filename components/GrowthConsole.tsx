@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import BodyClass from "./BodyClass";
-import { AppHeader, Badge, Card, DataTable, EmptyRow, Field, Modal, Msg } from "./ui";
+import { AppHeader, Badge, Card, DataTable, EmptyRow, Field, LogoutButton, Modal, Msg } from "./ui";
 
 type ChatTurn = { role: "user" | "assistant"; text: string };
 type PeriodKey = "today" | "yesterday" | "last7" | "last14" | "last28";
@@ -868,6 +868,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
         <button className="btn btn-ghost btn-sm" onClick={reload}>
           ↻ Refresh
         </button>
+        <LogoutButton />
       </AppHeader>
 
       <div className="screen-content">
@@ -1119,7 +1120,14 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             {!nurtureFu && <div className="text-muted">Loading...</div>}
             {nurtureFu && (
               <section className="gr-stats-row">
-                {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.newNurture?.[p.key] ?? 0} />)}
+                {PERIODS.map((p) => (
+                  <StatTile
+                    key={p.key}
+                    label={p.label}
+                    value={nurtureFu.newNurture?.[p.key] ?? 0}
+                    sub={`${nurtureFu.newNurture?.byType?.["BD/Inhouse"]?.[p.key] ?? 0} BD/Inhouse · ${nurtureFu.newNurture?.byType?.PH?.[p.key] ?? 0} PH`}
+                  />
+                ))}
               </section>
             )}
           </section>
@@ -1130,7 +1138,14 @@ export default function GrowthConsole({ session, initial, loadError }: { session
             {nurtureFu && (
               <>
                 <section className="gr-stats-row">
-                  {PERIODS.map((p) => <StatTile key={p.key} label={p.label} value={nurtureFu.fuSent?.[p.key] ?? 0} />)}
+                  {PERIODS.map((p) => (
+                    <StatTile
+                      key={p.key}
+                      label={p.label}
+                      value={nurtureFu.fuSent?.[p.key] ?? 0}
+                      sub={`${nurtureFu.fuSent?.byType?.["BD/Inhouse"]?.[p.key] ?? 0} BD/Inhouse · ${nurtureFu.fuSent?.byType?.PH?.[p.key] ?? 0} PH`}
+                    />
+                  ))}
                 </section>
                 <div className="text-muted" style={{ marginTop: 6, fontSize: 12 }}>
                   FU1: <strong>{nurtureFu.fuSent?.byStage?.fu1 ?? 0}</strong> · FU2: <strong>{nurtureFu.fuSent?.byStage?.fu2 ?? 0}</strong> · FU3: <strong>{nurtureFu.fuSent?.byStage?.fu3 ?? 0}</strong>
@@ -1164,15 +1179,21 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           <section className="card">
             <h2>📆 Daily Appointment by Recruiters</h2>
-            <div className="row-auto">
-              <label>Start<input type="date" value={s2aRange.startDate} onChange={(e) => setS2aRange({ ...s2aRange, startDate: e.target.value })} /></label>
-              <label>End<input type="date" value={s2aRange.endDate} onChange={(e) => setS2aRange({ ...s2aRange, endDate: e.target.value })} /></label>
-              <button className="btn btn-outline" onClick={() => loadS2ARange(s2aRange.startDate, s2aRange.endDate)}>Apply</button>
-              <button className="btn btn-outline" onClick={() => quickRange(1)}>Today</button>
-              <button className="btn btn-outline" onClick={() => quickRange(2)}>Yesterday+Today</button>
-              <button className="btn btn-outline" onClick={() => quickRange(7)}>Last 7 Days</button>
-              <button className="btn btn-outline" onClick={() => quickRange(14)}>Last 14 Days</button>
-              <button className="btn btn-outline" onClick={() => quickRange(28)}>Last 28 Days</button>
+            <div className="gr-lb-daterow">
+              <div className="gr-lb-field">
+                <label>Start</label>
+                <input type="date" value={s2aRange.startDate} onChange={(e) => setS2aRange({ ...s2aRange, startDate: e.target.value })} />
+              </div>
+              <div className="gr-lb-field">
+                <label>End</label>
+                <input type="date" value={s2aRange.endDate} onChange={(e) => setS2aRange({ ...s2aRange, endDate: e.target.value })} />
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => loadS2ARange(s2aRange.startDate, s2aRange.endDate)}>Apply</button>
+              <button className="btn btn-outline btn-sm" onClick={() => quickRange(1)}>Today</button>
+              <button className="btn btn-outline btn-sm" onClick={() => quickRange(2)}>Yesterday+Today</button>
+              <button className="btn btn-outline btn-sm" onClick={() => quickRange(7)}>Last 7 Days</button>
+              <button className="btn btn-outline btn-sm" onClick={() => quickRange(14)}>Last 14 Days</button>
+              <button className="btn btn-outline btn-sm" onClick={() => quickRange(28)}>Last 28 Days</button>
             </div>
             {s2aRangeData && (
               <>
@@ -1199,10 +1220,13 @@ export default function GrowthConsole({ session, initial, loadError }: { session
 
           <section className="card">
             <div className="card-header"><h2>📝 Daily Feedback</h2></div>
-            <div className="btn-group" style={{ marginBottom: 10 }}>
-              <label>Date<input type="date" value={feedbackDate} onChange={(e) => setFeedbackDate(e.target.value)} /></label>
-              <button className="btn btn-outline" onClick={() => loadFeedbackForDate(feedbackDate)}>Apply</button>
-              <button className="btn btn-outline" onClick={() => loadFeedbackForDate(new Date().toISOString().slice(0, 10))}>Today</button>
+            <div className="gr-lb-daterow">
+              <div className="gr-lb-field">
+                <label>Date</label>
+                <input type="date" value={feedbackDate} onChange={(e) => setFeedbackDate(e.target.value)} />
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => loadFeedbackForDate(feedbackDate)}>Apply</button>
+              <button className="btn btn-outline btn-sm" onClick={() => loadFeedbackForDate(new Date().toISOString().slice(0, 10))}>Today</button>
             </div>
             <div className="table-wrap">
               <table>
@@ -1259,7 +1283,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                 <thead>
                   <tr>
                     <th>Client</th><th>Status</th><th>Quota</th><th>Target/Day</th><th>Cycle</th>
-                    <th>Total Appts</th><th>Remaining (Cycle)</th><th>% Quota Complete</th><th>Overall CA/NY</th><th>Cycle CA/NY</th>
+                    <th>Total Appts</th><th>Last 7 Days Appts</th><th>Remaining (Cycle)</th><th>% Quota Complete</th><th>Overall CA/NY</th><th>Cycle CA/NY</th>
                     <th>CA/NY (Cycle Count)</th><th>Positive</th><th>Negative</th><th>No Show</th>
                   </tr>
                 </thead>
@@ -1281,6 +1305,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                         <td>{c.targetAvgPerDay ?? "—"}</td>
                         <td>{c.cycleNumber || "—"}</td>
                         <td>{c.totalAppts}</td>
+                        <td>{c.last7Appts ?? 0}</td>
                         <td>{c.remainingThisCycle ?? "—"}</td>
                         <td style={quotaColor ? { background: quotaColor } : undefined}>{c.quotaCompletePct || 0}%</td>
                         <td>{c.overallCanyPct}%</td>
@@ -1293,7 +1318,7 @@ export default function GrowthConsole({ session, initial, loadError }: { session
                     );
                   })}
                   {filteredClientRows.length === 0 && (
-                    <tr><td colSpan={14} className="text-muted" style={{ textAlign: "center", padding: 20 }}>{clientTrackerLoaded ? "No clients match." : "Loading…"}</td></tr>
+                    <tr><td colSpan={15} className="text-muted" style={{ textAlign: "center", padding: 20 }}>{clientTrackerLoaded ? "No clients match." : "Loading…"}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1528,21 +1553,39 @@ export default function GrowthConsole({ session, initial, loadError }: { session
           <section className="row-auto">
             <div className="card">
               <h2>💵 Add Cost</h2>
-              <div className="form-row">
-                <input placeholder="Amount" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
-                <input placeholder="Description" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
-                <textarea placeholder="Notes" value={cost.notes} onChange={(e) => setCost({ ...cost, notes: e.target.value })} />
-                <button className="btn btn-primary" onClick={() => doAction({ action: "addCost", ...cost })}>Add Cost</button>
+              <div className="fin-form-grid">
+                <div className="form-row">
+                  <label>Amount</label>
+                  <input type="number" min="0" step="0.01" placeholder="0" value={cost.amount} onChange={(e) => setCost({ ...cost, amount: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Description</label>
+                  <input placeholder="What was this for?" value={cost.description} onChange={(e) => setCost({ ...cost, description: e.target.value })} />
+                </div>
               </div>
+              <div className="form-row mt-8">
+                <label>Notes</label>
+                <textarea placeholder="Optional" value={cost.notes} onChange={(e) => setCost({ ...cost, notes: e.target.value })} />
+              </div>
+              <button className="btn btn-primary mt-8" onClick={() => doAction({ action: "addCost", ...cost })}>Add Cost</button>
             </div>
             <div className="card">
               <h2>🧾 Add Client Payment</h2>
-              <div className="form-row">
-                <input placeholder="Client" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
-                <input placeholder="Total Billed" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
-                <input placeholder="Invoice Ref" value={payment.invoiceRef} onChange={(e) => setPayment({ ...payment, invoiceRef: e.target.value })} />
-                <button className="btn btn-primary" onClick={() => doAction({ action: "addPayment", ...payment })}>Add Payment</button>
+              <div className="fin-form-grid">
+                <div className="form-row">
+                  <label>Client Name</label>
+                  <input placeholder="Client name" value={payment.clientName} onChange={(e) => setPayment({ ...payment, clientName: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Total Billed</label>
+                  <input type="number" min="0" step="0.01" placeholder="0" value={payment.totalBilled} onChange={(e) => setPayment({ ...payment, totalBilled: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Invoice # / Ref</label>
+                  <input placeholder="Optional" value={payment.invoiceRef} onChange={(e) => setPayment({ ...payment, invoiceRef: e.target.value })} />
+                </div>
               </div>
+              <button className="btn btn-primary mt-8" onClick={() => doAction({ action: "addPayment", ...payment })}>Add Payment</button>
             </div>
           </section>
 

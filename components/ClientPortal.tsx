@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import BodyClass from "./BodyClass";
-import { AppHeader, Badge, BarChart, Card, DataTable, EmptyRow, Field, Msg, StatGrid, Tabs } from "./ui";
+import { AppHeader, Badge, BarChart, Card, DataTable, EmptyRow, Field, LogoutButton, Msg, StatGrid, Tabs } from "./ui";
 
 export default function ClientPortal({ session, initial, loadError }: { session: { name: string; email: string }; initial: any; loadError?: string }) {
   const [data, setData] = useState(initial);
@@ -57,6 +57,7 @@ export default function ClientPortal({ session, initial, loadError }: { session:
         <button className="btn btn-ghost btn-sm" onClick={reload}>
           ↻ Refresh
         </button>
+        <LogoutButton />
       </AppHeader>
 
       <Tabs

@@ -7,6 +7,39 @@ Everything below is about **live**.
 
 ---
 
+## Latest round of Growth/panel fixes (uncommitted — needs push)
+
+Files changed: `components/{GrowthConsole,OperationsConsole,AgentConsole,ClientPortal,ui}.tsx`,
+`lib/{growthDashboard,clientTracker,legacyRecruiter}.ts`.
+
+1. **Logout on every panel.** Was only on Admin and Recruiter. Added a shared
+   `LogoutButton` in `components/ui.tsx`, dropped into Growth, Operations,
+   Agent and Client headers.
+2. **BD/Inhouse · PH sub-notes were reading ~0.** The by-type split under the
+   Sends / New Nurture / FU tiles only counted the *active recruiter roster*,
+   but sends/nurtures come from everyone (including reassigned or
+   status-changed users). Now resolves each sender's type from all
+   `app_users`, not just the roster (`getTypeById` in `growthDashboard.ts`).
+3. **BD/PH sub-notes were missing entirely** from the New Nurture Sent and FU
+   Sent tiles — added, matching the Sends tile.
+4. **Finance forms rendered edge-to-edge** (placeholders acting as labels).
+   Add Cost / Add Client Payment now use GAS's `.fin-form-grid` with a real
+   labelled `.form-row` per field.
+5. **Filter button rows wrapped badly.** Daily Appointment and Daily Feedback
+   date+quick-range rows now use GAS's `.gr-lb-daterow`/`.gr-lb-field` flex
+   layout instead of a grid.
+6. **Client Tracker: added "Last 7 Days Appts" column** right after Total
+   Appts (`last7Appts`, computed from `leads_ledger.date_created` in
+   `clientTracker.ts`).
+7. **Outreach sends now stamp `created_at` explicitly** so new sends land in
+   the correct day window on the Sends tiles.
+
+Not built (waiting on you): **Client Report** (3rd Reports sub-tab). Its
+Calendly-funnel columns need GA4 access — see "GA4 access — step by step"
+at the bottom of this file. Once that's set up, it gets built fully.
+
+---
+
 ## Folder layout (changed)
 
 The root now contains only the running application. Everything else moved to
@@ -229,6 +262,51 @@ into a wide dashboard would change how the work actually flows.
 Verify after deploying: every panel should be `#6c2eb9` purple on `#f5f5f7`,
 system font, with the sticky white `.app-header` and underline-style tabs —
 not the old Arial / `#5b21b6` / bordered-pill look.
+
+---
+
+## GA4 access — step by step (unlocks Link Open vs Booking + Client Report funnel)
+
+Two GA4-dependent features are deferred until the service account can read
+Analytics: the **Link Open vs Booking** section and the funnel columns of the
+**Client Report**. Both use GA4 property **`543445631`** ("FranBooking
+Calendly") and these three Calendly events: `invitee_event_type_page` (Views),
+`invitee_select_time` (Select Time), `invitee_meeting_scheduled` (Booked).
+
+The Next.js app authenticates to Google with the **same service account** it
+already uses for Sheets — the JSON at
+`…\OneDrive\00 Franchise Booking\API\claude-automation-497715-6a3f3ee75144.json`,
+GCP project `claude-automation-497715`. Its email is the `client_email` field
+inside that JSON (open it in Notepad to copy the exact address — it looks like
+`something@claude-automation-497715.iam.gserviceaccount.com`).
+
+Do these two things, then tell me they're done:
+
+**A. Grant the service account read access to the GA4 property**
+1. Go to https://analytics.google.com → **Admin** (gear, bottom-left).
+2. Top of the Admin page, make sure the **Property** column shows *FranBooking
+   Calendly* (property ID `543445631`). Switch to it if not.
+3. In the Property column click **Property Access Management**.
+4. Click the **+** (top right) → **Add users**.
+5. Paste the service account's `client_email` address.
+6. Role: **Viewer** is enough. Untick "Notify new users by email" (a service
+   account has no inbox).
+7. Click **Add**.
+
+**B. Enable the Analytics Data API on the service account's project**
+1. Go to https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com
+2. At the very top, confirm the project selector says **claude-automation-497715**
+   (switch to it if not).
+3. Click **Enable**. (If it already says "Manage", it's on — nothing to do.)
+
+That's it — no new key, no new env var. It reuses the Sheets credentials you
+already have in Vercel. Once you confirm A and B are done, I'll build the GA4
+report code and the Client Report funnel columns.
+
+> Why the service account and not your own Google login: GAS used the Apps
+> Script owner's personal Google auth via the Advanced "Analytics Data API"
+> service. A Vercel app has no interactive user to log in as, so it must use
+> the service account — which is why it needs to be granted Viewer explicitly.
 
 ---
 

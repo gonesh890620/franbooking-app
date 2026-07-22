@@ -185,7 +185,10 @@ async function insertSupabaseOutreach(email: string, data: {
       linkedin_url: data.li,
       outreach_type: data.outreachType,
       subject: data.subject,
-      message: data.message
+      message: data.message,
+      // Set explicitly so the row always lands in the correct day window on
+      // the Growth "Sends" tiles, even if the table has no created_at default.
+      created_at: new Date().toISOString()
     });
   } catch {
     // Non-blocking during transition.

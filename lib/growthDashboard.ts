@@ -82,6 +82,19 @@ async function getRoster(): Promise<RosterMember[]> {
   }));
 }
 
+/**
+ * id -> "BD/Inhouse" | "PH" for EVERY app user, not just the active recruiter
+ * roster. The BD/PH sub-note under the Sends / New Nurture / FU tiles must
+ * resolve a type for every sender; scoping it to the active roster made those
+ * splits read ~0 while the totals were in the hundreds.
+ */
+async function getTypeById(): Promise<Map<string, "BD/Inhouse" | "PH">> {
+  const { data } = await (getSupabaseAdmin() as any).from("app_users").select("id,legacy_type");
+  const map = new Map<string, "BD/Inhouse" | "PH">();
+  (data || []).forEach((u: any) => map.set(u.id, normalizeRecruiterType(u.legacy_type)));
+  return map;
+}
+
 function computeSalesNavDaysLeft(dateAdded: string | null) {
   if (!dateAdded) return null;
   const start = new Date(`${String(dateAdded).slice(0, 10)}T00:00:00Z`);
@@ -101,13 +114,21 @@ export async function getGrowthDashboard() {
     supabase.from("campaigns").select("campaign_name,campaign_status"),
     supabase.from("wait_list").select("id", { count: "exact", head: true }),
     supabase.from("sales_nav_inventory").select("date_added"),
-    // Broader than the active-recruiter roster — used only as a name
-    // fallback for sends attributed to a user who no longer qualifies as an
-    // active recruiter (status changed, reassigned, etc.), so the drilldown
-    // shows their real name instead of "Unknown".
-    supabase.from("app_users").select("id,name")
+    // Broader than the active-recruiter roster — used as a name AND type
+    // fallback for appts/sends attributed to a user who no longer qualifies
+    // as an active recruiter (status changed, reassigned, etc.). Without the
+    // type fallback, the BD/Inhouse·PH split under every Sends/Appts tile
+    // counted only active-roster recruiters and read ~0 while the totals were
+    // in the hundreds. Type must resolve for EVERY sender, not just the
+    // current active roster.
+    supabase.from("app_users").select("id,name,legacy_type")
   ]);
   const allUsersById = new Map((allUsersRes.data || []).map((u: any) => [u.id, u.name as string]));
+  // id -> "BD/Inhouse" | "PH", covering every user who ever sent, with the
+  // active roster taking precedence where both exist.
+  const typeById = new Map<string, "BD/Inhouse" | "PH">();
+  (allUsersRes.data || []).forEach((u: any) => typeById.set(u.id, normalizeRecruiterType(u.legacy_type)));
+  roster.forEach((r) => typeById.set(r.id, r.type));
 
   // --- Client Status ---
   const clients = { onFire: 0, smokin: 0, onTrack: 0, improving: 0, paused: 0, waitlist: 0, active: 0, other: 0, total: 0 };
@@ -141,8 +162,8 @@ export async function getGrowthDashboard() {
     if (dateStr >= b.cut14 && row.recruiter_id) {
       apptsByRecruiter14.set(row.recruiter_id, (apptsByRecruiter14.get(row.recruiter_id) || 0) + 1);
     }
-    const recruiter = row.recruiter_id ? rosterById.get(row.recruiter_id) : null;
-    if (recruiter) bumpPeriod(apptsByType[recruiter.type], dateStr, b);
+    const apptType = row.recruiter_id ? typeById.get(row.recruiter_id) : null;
+    if (apptType) bumpPeriod(apptsByType[apptType], dateStr, b);
   });
   const apptsTotal = leadsTotalRes.count || 0;
 
@@ -162,8 +183,8 @@ export async function getGrowthDashboard() {
       if (!sendsByRecruiterPeriod.has(row.recruiter_id)) sendsByRecruiterPeriod.set(row.recruiter_id, emptyPeriodCounts());
       bumpPeriod(sendsByRecruiterPeriod.get(row.recruiter_id)!, dateStr, b);
     }
-    const recruiter = row.recruiter_id ? rosterById.get(row.recruiter_id) : null;
-    if (recruiter) bumpPeriod(sendsByType[recruiter.type], dateStr, b);
+    const sendType = row.recruiter_id ? typeById.get(row.recruiter_id) : null;
+    if (sendType) bumpPeriod(sendsByType[sendType], dateStr, b);
   });
   const sendsByRecruiterList = (period: keyof PeriodCounts) =>
     Array.from(sendsByRecruiterPeriod.entries())
@@ -349,8 +370,7 @@ export async function getRecruitersOnLeaveTomorrow() {
 // Recruiter panel) is still Sheets-only; this is a reporting-only read of a
 // periodically-refreshed mirror, not a live operational read/write.
 export async function getNurtureFuStats() {
-  const roster = await getRoster();
-  const rosterById = new Map(roster.map((r) => [r.id, r]));
+  const typeById = await getTypeById();
   const b = periodBoundaries();
   const newNurture = emptyPeriodCounts();
   const fuSent = emptyPeriodCounts();
@@ -364,18 +384,18 @@ export async function getNurtureFuStats() {
     .limit(20000);
 
   (data || []).forEach((row: any) => {
-    const recruiter = row.recruiter_id ? rosterById.get(row.recruiter_id) : null;
+    const type = row.recruiter_id ? typeById.get(row.recruiter_id) : null;
     const dJ = toDateKey(row.date_j);
     const dK = toDateKey(row.date_k);
     const dL = toDateKey(row.date_l);
     const dM = toDateKey(row.date_m);
     if (dJ) {
       bumpPeriod(newNurture, dJ, b);
-      if (recruiter) bumpPeriod(newNurtureByType[recruiter.type], dJ, b);
+      if (type) bumpPeriod(newNurtureByType[type], dJ, b);
     }
-    if (dK) { bumpPeriod(fuSent, dK, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dK, b); fuByStage.fu1++; }
-    if (dL) { bumpPeriod(fuSent, dL, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dL, b); fuByStage.fu2++; }
-    if (dM) { bumpPeriod(fuSent, dM, b); if (recruiter) bumpPeriod(fuByType[recruiter.type], dM, b); fuByStage.fu3++; }
+    if (dK) { bumpPeriod(fuSent, dK, b); if (type) bumpPeriod(fuByType[type], dK, b); fuByStage.fu1++; }
+    if (dL) { bumpPeriod(fuSent, dL, b); if (type) bumpPeriod(fuByType[type], dL, b); fuByStage.fu2++; }
+    if (dM) { bumpPeriod(fuSent, dM, b); if (type) bumpPeriod(fuByType[type], dM, b); fuByStage.fu3++; }
   });
 
   return { newNurture: { ...newNurture, byType: newNurtureByType }, fuSent: { ...fuSent, byType: fuByType, byStage: fuByStage } };

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { firstName, scriptText } from "@/lib/agentScripts";
 import BodyClass from "./BodyClass";
-import { AppHeader } from "./ui";
+import { AppHeader, LogoutButton } from "./ui";
 
 type Answers = Record<string, string>;
 
@@ -97,6 +97,7 @@ export default function AgentConsole({ session, initial, loadError }: { session:
         <button className="btn btn-ghost btn-sm" onClick={reload}>
           ↻ Refresh
         </button>
+        <LogoutButton />
       </AppHeader>
 
       <div className="screen-content">
